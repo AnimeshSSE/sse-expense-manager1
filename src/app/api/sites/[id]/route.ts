@@ -95,7 +95,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       where: { id },
       include: {
         _count: {
-          select: { expenses: true, requisitions: true },
+          select: { expenses: true, requisitions: true, advances: true },
         },
       },
     });
@@ -104,9 +104,9 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Site not found' }, { status: 404 });
     }
 
-    if (site._count.expenses > 0 || site._count.requisitions > 0) {
+    if (site._count.expenses > 0 || site._count.requisitions > 0 || site._count.advances > 0) {
       return NextResponse.json(
-        { error: 'Cannot delete site with existing expenses or requisitions' },
+        { error: 'Cannot delete site with existing expenses, requisitions, or advances' },
         { status: 400 }
       );
     }

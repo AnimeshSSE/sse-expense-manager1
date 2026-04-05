@@ -26,10 +26,9 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      categories: categories.map((c) => ({
+      categories: categories.map(({ _count, ...c }) => ({
         ...c,
-        expenseCount: c._count.expenses,
-        _count: undefined,
+        expenseCount: _count.expenses,
       })),
     });
   } catch (error: any) {

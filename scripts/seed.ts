@@ -1,12 +1,9 @@
 import { db } from '../src/lib/db'
 import { Role, PaymentMethod, Priority, CategoryType } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
 async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+  return bcrypt.hash(password, 12)
 }
 
 // Helper to create a date N days ago

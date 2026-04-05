@@ -31,12 +31,10 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      sites: sites.map((s) => ({
+      sites: sites.map(({ _count, client, ...s }) => ({
         ...s,
-        clientName: s.client.name,
-        client: undefined,
-        expenseCount: s._count.expenses,
-        _count: undefined,
+        clientName: client.name,
+        expenseCount: _count.expenses,
       })),
     });
   } catch (error: any) {

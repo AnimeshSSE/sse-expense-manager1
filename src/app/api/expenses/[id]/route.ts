@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createAuditLog, formatAuditValues } from '@/lib/audit';
-import { ExpenseStatus } from '@prisma/client';
 
 type RouteContext = { params: Promise<{ id: string }> };
 

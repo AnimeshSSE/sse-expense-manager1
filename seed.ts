@@ -1,17 +1,14 @@
 import { db } from './src/lib/db';
+import bcrypt from 'bcryptjs';
 
 async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return bcrypt.hash(password, 12);
 }
 
 async function main() {
   const adminPw = await hashPassword('admin123');
   const userPw = await hashPassword('user123');
-  const acctPw = await hashPassword('acct123');
+  const acctPw = await hashPassword('accountant123');
   const stockPw = await hashPassword('stock123');
 
   const admin = await db.user.create({ data: { email: 'admin@demo.com', name: 'Admin User', password: adminPw, role: 'ADMIN', isActive: true } });

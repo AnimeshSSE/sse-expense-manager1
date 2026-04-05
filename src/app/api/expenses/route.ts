@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createAuditLog, formatAuditValues } from '@/lib/audit';
-import { Prisma, ExpenseStatus, PaymentMethod, Role } from '@prisma/client';
+import { Prisma, ExpenseStatus, PaymentMethod } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {

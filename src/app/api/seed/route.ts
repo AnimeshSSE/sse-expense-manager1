@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
       if (!session) {
         return NextResponse.json({ error: 'Authentication required for reseed' }, { status: 401 });
       }
+      // Only ADMIN can force reseed
+      if (forceReseed && !checkPermission(session.role, 'MANAGE_USERS')) {
+        return NextResponse.json({ error: 'Only admins can reseed the database' }, { status: 403 });
+      }
     }
     if (existingUsers > 0 && !forceReseed) {
       return NextResponse.json(
@@ -529,18 +533,20 @@ export async function POST(request: NextRequest) {
         expenses: totalExpenses,
         requisitions: totalRequisitions,
       },
-      demoAccounts: {
-        admin: { email: 'admin@demo.com', password: 'admin123' },
-        accountant: { email: 'accountant@demo.com', password: 'accountant123' },
-        stockManager: { email: 'stock@demo.com', password: 'stock123' },
-        user: { email: 'user@demo.com', password: 'user123' },
-        user2: { email: 'user2@demo.com', password: 'user123' },
-      },
+      ...(process.env.NODE_ENV !== 'production' ? {
+        demoAccounts: {
+          admin: { email: 'admin@demo.com', password: 'admin123' },
+          accountant: { email: 'accountant@demo.com', password: 'accountant123' },
+          stockManager: { email: 'stock@demo.com', password: 'stock123' },
+          user: { email: 'user@demo.com', password: 'user123' },
+          user2: { email: 'user2@demo.com', password: 'user123' },
+        },
+      } : {}),
     });
   } catch (error: any) {
     console.error('Seed error:', error);
     return NextResponse.json(
-      { error: 'Internal server error', details: error.message },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

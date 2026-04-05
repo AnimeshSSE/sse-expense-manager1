@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createAuditLog, formatAuditValues } from '@/lib/audit';
-import { Prisma, AdvanceStatus } from '@prisma/client';
+import { Prisma, AdvanceStatus, Role } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       where.userId = session.id;
     }
 
-    if (userId && checkPermission(session.role, 'VIEW_ALL_EXPENSES')) where.userId = userId;
+    if (userId) where.userId = userId;
     if (status) {
       const statuses = status.split(',').filter(Boolean) as AdvanceStatus[];
       if (statuses.length === 1) where.status = statuses[0];
@@ -55,10 +55,10 @@ export async function GET(request: NextRequest) {
     }
     if (search) {
       where.OR = [
-        { purpose: { contains: search, mode: 'insensitive' } },
-        { notes: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
-        { site: { name: { contains: search, mode: 'insensitive' } } },
+        { purpose: { contains: search } },
+        { notes: { contains: search } },
+        { user: { name: { contains: search } } },
+        { site: { name: { contains: search } } },
       ];
     }
 

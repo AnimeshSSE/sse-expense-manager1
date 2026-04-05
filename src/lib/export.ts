@@ -1,5 +1,3 @@
-'use client'
-
 /**
  * Export utility for CSV, XLS, PDF export
  * All exports are client-side using the data already loaded in the page

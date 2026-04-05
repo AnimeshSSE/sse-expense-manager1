@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
     const entityType = searchParams.get('entityType');

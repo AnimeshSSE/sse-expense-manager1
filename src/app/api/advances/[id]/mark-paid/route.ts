@@ -7,7 +7,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    if (!checkPermission(session.role, 'MARK_EXPENSE_PAID') && !checkPermission(session.role, 'ADMIN_APPROVE_EXPENSE')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!checkPermission(session.role, 'MARK_EXPENSE_PAID')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     const advance = await db.advance.findUnique({ where: { id } });
     if (!advance) return NextResponse.json({ error: 'Advance not found' }, { status: 404 });

@@ -194,6 +194,7 @@ class ApiClient {
     if (params?.sort) mapped.sortBy = params.sort
     if (params?.sortDir) mapped.sortOrder = params.sortDir
     if (params?.status) mapped.status = params.status
+    if (params?.userId) mapped.userId = params.userId
     if (params?.clientId) mapped.clientId = params.clientId
     if (params?.siteId) mapped.siteIds = params.siteId
     if (params?.categoryId) mapped.categoryIds = params.categoryId

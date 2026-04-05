@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
-
+import { Prisma } from '@prisma/client';
 
 export async function GET() {
   try {
@@ -26,9 +26,10 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      clients: clients.map(({ _count, ...c }) => ({
+      clients: clients.map((c) => ({
         ...c,
-        siteCount: _count.sites,
+        siteCount: c._count.sites,
+        _count: undefined,
       })),
     });
   } catch (error: any) {

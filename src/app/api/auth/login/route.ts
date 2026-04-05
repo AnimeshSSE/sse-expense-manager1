@@ -52,20 +52,13 @@ export async function POST(request: NextRequest) {
     const tokenExpiry = new Date();
     tokenExpiry.setDate(tokenExpiry.getDate() + 7);
 
-    // Auto-upgrade legacy SHA-256 hash to bcrypt on successful login
-    const isLegacyHash = user.password.length === 64 && /^[a-f0-9]+$/.test(user.password);
-    const updateData: Record<string, any> = {
-      token,
-      tokenExpiry,
-      lastLogin: new Date(),
-    };
-    if (isLegacyHash) {
-      updateData.password = await hashPassword(password);
-    }
-
     await db.user.update({
       where: { id: user.id },
-      data: updateData,
+      data: {
+        token,
+        tokenExpiry,
+        lastLogin: new Date(),
+      },
     });
 
     const response = NextResponse.json({

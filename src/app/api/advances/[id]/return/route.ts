@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 
@@ -7,7 +7,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    if (!checkPermission(session.role, 'ACCOUNTANT_APPROVE_EXPENSE') && !checkPermission(session.role, 'ADMIN_APPROVE_EXPENSE')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const { id } = await params;
     const { reason } = await request.json();
     if (!reason) return NextResponse.json({ error: 'Reason is required' }, { status: 400 });

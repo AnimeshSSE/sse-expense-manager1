@@ -1,30 +1,28 @@
 import { PrismaClient } from '@prisma/client'
+import { PrismaLibSQL } from '@prisma/adapter-libsql'
 
 // Singleton pattern for PrismaClient
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-function createPrismaClient() {
-  const databaseUrl = process.env.DATABASE_URL
+function createDb(): PrismaClient {
+  const dbUrl = process.env.DATABASE_URL || ''
 
-  // Use pg adapter for PostgreSQL (Vercel Postgres / Neon)
-  if (databaseUrl && (databaseUrl.startsWith('postgres') || databaseUrl.startsWith('postgresql'))) {
-    // Dynamic imports to avoid bundling pg when using SQLite locally
-    const { Pool } = require('pg')
-    const { PrismaPg } = require('@prisma/adapter-pg')
+  // If using Turso (libsql:// URL), use the libSQL adapter
+  if (dbUrl.startsWith('libsql://')) {
+    const adapter = new PrismaLibSQL({
+      url: dbUrl,
+      authToken: process.env.DATABASE_AUTH_TOKEN,
+    })
 
-    // For Vercel Postgres, use the non-pooled direct URL for the adapter
-    const directUrl = process.env.DIRECT_URL || databaseUrl
-    const pool = new Pool({ connectionString: directUrl })
-    const adapter = new PrismaPg(pool)
-
-    return new PrismaClient({ adapter })
+    return new PrismaClient({ adapter, log: ['error'] })
   }
 
-  return new PrismaClient()
+  // Local SQLite development (file: URL)
+  return new PrismaClient({ log: ['error'] })
 }
 
-export const db = globalForPrisma.prisma ?? createPrismaClient()
+export const db = globalForPrisma.prisma ?? createDb()
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db

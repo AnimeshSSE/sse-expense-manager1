@@ -121,7 +121,7 @@ export function CommentThread({ entityType, entityId }: CommentThreadProps) {
         ) : (
           comments.map((comment: any) => (
             <div key={comment.id} className="flex gap-2.5">
-              <Avatar className="w-7 h-7 flex-shrink-0">
+              <Avatar className="w-7 h-7 h-7 flex-shrink-0">
                 <AvatarFallback className="text-[10px] font-semibold bg-stone-100 text-stone-600">
                   {comment.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                 </AvatarFallback>

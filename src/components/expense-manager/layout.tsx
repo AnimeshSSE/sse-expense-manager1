@@ -99,9 +99,11 @@ function NotificationBell() {
   useEffect(() => {
     async function fetchCounts() {
       try {
+        const baseExpenseParams = { limit: '1' }
+        const userExpenseParams = user?.id ? { ...baseExpenseParams, userId: user.id } : baseExpenseParams
         const [pendingExp, returnedExp, pendingAdv] = await Promise.all([
-          api.getExpenses({ status: 'PENDING', userId: user?.id, limit: '1' }),
-          api.getExpenses({ status: 'RETURNED', userId: user?.id, limit: '1' }),
+          api.getExpenses({ status: 'PENDING', ...userExpenseParams }),
+          api.getExpenses({ status: 'RETURNED', ...userExpenseParams }),
           api.getAdvances({ status: 'PENDING', limit: '1' }),
         ])
         const newCounts: Record<string, number> = {

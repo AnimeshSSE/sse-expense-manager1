@@ -372,7 +372,13 @@ export function RequisitionsPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('session_token') || ''}`,
+        },
+        body: formData,
+      })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Upload failed')

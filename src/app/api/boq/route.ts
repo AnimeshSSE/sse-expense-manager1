@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 
@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
-    if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES') && !checkPermission(session.role, 'VIEW_ALL_MIRS')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
     const siteIds = searchParams.get('siteIds');
@@ -45,9 +44,9 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { itemName: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { category: { contains: search, mode: 'insensitive' } },
+        { itemName: { contains: search } },
+        { description: { contains: search } },
+        { category: { contains: search } },
       ];
     }
 

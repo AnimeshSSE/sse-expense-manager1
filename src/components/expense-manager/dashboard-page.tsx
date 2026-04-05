@@ -295,7 +295,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       }
     }
     loadStats()
-  }, [selectedClient, selectedSite, selectedMonth, selectedUserId])
+  }, [selectedClient, selectedSite, selectedMonth, selectedUserId, selectedEmployee])
 
   useEffect(() => {
     async function loadLate() {

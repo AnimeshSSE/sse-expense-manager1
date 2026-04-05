@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createAuditLog, formatAuditValues } from '@/lib/audit';
 
@@ -26,9 +26,6 @@ export async function GET(
     });
     if (!advance) {
       return NextResponse.json({ error: 'Advance not found' }, { status: 404 });
-    }
-    if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES') && advance.userId !== session.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     return NextResponse.json({ advance });
   } catch (error: any) {

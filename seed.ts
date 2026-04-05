@@ -1,8 +1,12 @@
+import { ExpenseStatus, RequisitionStatus, AdvanceStatus, Priority } from '@prisma/client';
 import { db } from './src/lib/db';
-import bcrypt from 'bcryptjs';
 
 async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12);
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function main() {
@@ -31,7 +35,7 @@ async function main() {
     catIds.push(cat.id);
   }
 
-  const statuses: any[] = ['PENDING', 'ACCOUNTANT_APPROVED', 'ADMIN_APPROVED', 'PAID', 'RETURNED'];
+  const statuses: ExpenseStatus[] = ['PENDING', 'ACCOUNTANT_APPROVED', 'ADMIN_APPROVED', 'PAID', 'RETURNED'];
   for (let i = 0; i < 20; i++) {
     const status = statuses[i % statuses.length];
     const amount = Math.round((Math.random() * 50000 + 1000) * 100) / 100;
@@ -60,7 +64,8 @@ async function main() {
     await db.expense.create({ data: data as any });
   }
 
-  const mirStatuses: any[] = ['PENDING', 'STOCK_MANAGER_APPROVED', 'ADMIN_APPROVED', 'ORDERED', 'RECEIVED'];
+  const mirStatuses: RequisitionStatus[] = ['PENDING', 'STOCK_MANAGER_APPROVED', 'ADMIN_APPROVED', 'ORDERED', 'RECEIVED'];
+  const priorities: Priority[] = ['LOW', 'MEDIUM', 'HIGH'];
   for (let i = 0; i < 10; i++) {
     const status = mirStatuses[i % mirStatuses.length];
     const daysAgo = Math.floor(Math.random() * 60);
@@ -72,13 +77,13 @@ async function main() {
         title: 'MIR-' + String(i + 1).padStart(3, '0') + ': Materials Request',
         description: 'Materials for construction phase ' + (i + 1),
         requiredDate: new Date(date.getTime() + 14 * 86400000),
-        priority: ['LOW', 'MEDIUM', 'HIGH'][i % 3],
+        priority: priorities[i % priorities.length],
         status,
       },
     });
   }
 
-  const advStatuses: any[] = ['PENDING', 'APPROVED', 'PAID', 'REJECTED', 'RETURNED'];
+  const advStatuses: AdvanceStatus[] = ['PENDING', 'APPROVED', 'PAID', 'REJECTED', 'RETURNED'];
   for (let i = 0; i < 5; i++) {
     const status = advStatuses[i % advStatuses.length];
     const amount = Math.round((Math.random() * 20000 + 2000) * 100) / 100;

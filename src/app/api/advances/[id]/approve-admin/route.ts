@@ -11,9 +11,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id } = await params;
     const advance = await db.advance.findUnique({ where: { id } });
     if (!advance) return NextResponse.json({ error: 'Advance not found' }, { status: 404 });
-    if (advance.status !== 'APPROVED') {
-      return NextResponse.json({ error: 'Advance must be APPROVED by accountant first' }, { status: 400 });
-    }
 
     const updated = await db.advance.update({
       where: { id },

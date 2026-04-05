@@ -8,10 +8,9 @@ const nextConfig: NextConfig = {
     "preview-chat-aecb54aa-1896-480f-86a7-c597a3d3a0c2.space.z.ai",
     "*.space.z.ai",
   ],
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   reactStrictMode: false,
+  // Serverless function config for Vercel
+  serverExternalPackages: ['@libsql/client'],
 };
 
 export default nextConfig;

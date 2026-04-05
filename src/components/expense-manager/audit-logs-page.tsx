@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -189,8 +189,9 @@ export function AuditLogsPage() {
                     const isExpanded = expandedRow === log.id
 
                     return (
-                      <React.Fragment key={log.id}>
+                      <>
                         <TableRow
+                          key={log.id}
                           className="cursor-pointer"
                           onClick={() => hasDetails && setExpandedRow(isExpanded ? null : log.id)}
                         >
@@ -242,7 +243,7 @@ export function AuditLogsPage() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </React.Fragment>
+                      </>
                     )
                   })
                 )}

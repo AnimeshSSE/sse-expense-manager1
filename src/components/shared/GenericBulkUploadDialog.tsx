@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 export type BulkUploadEntity = 'sites' | 'clients' | 'categories' | 'expenses' | 'requisitions' | 'advances'
 
 interface ParsedRow {
-  [key: string]: string
+  [key: string]: string | string[]
   _errors: string[]
 }
 
@@ -138,7 +138,8 @@ export function GenericBulkUploadDialog({
       })
 
       config.requiredFields.forEach(field => {
-        if (!row[field] || !row[field].trim()) {
+        const value = row[field]
+        if (typeof value !== 'string' || !value.trim()) {
           row._errors.push(`${field} is required`)
         }
       })
@@ -234,7 +235,12 @@ export function GenericBulkUploadDialog({
 
   const getRowPreviewText = (row: ParsedRow) => {
     const displayCols = columns.slice(0, 3)
-    return displayCols.map(c => row[c] || '-').join(' · ')
+    return displayCols
+      .map((c) => {
+        const value = row[c]
+        return typeof value === 'string' && value ? value : '-'
+      })
+      .join(' · ')
   }
 
   return (
@@ -299,10 +305,14 @@ export function GenericBulkUploadDialog({
                         row._errors.length > 0
                           ? 'border-red-200 bg-red-50 dark:border-red-900/30 dark:bg-red-950/20'
                           : 'border-border'
-                      )}
+                  )}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{row[columns[0]] || `Row ${idx + 1}`}</p>
+                        <p className="font-medium truncate">
+                          {typeof row[columns[0]] === 'string' && row[columns[0]]
+                            ? row[columns[0]]
+                            : `Row ${idx + 1}`}
+                        </p>
                         <p className="text-xs text-muted-foreground truncate">{getRowPreviewText(row)}</p>
                       </div>
                       {row._errors.length > 0 && (

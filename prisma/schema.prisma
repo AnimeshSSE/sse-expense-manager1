@@ -4,8 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "libsql"
-  url      = env("TURSO_DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:../db/dev.db"
 }
 
 model User {

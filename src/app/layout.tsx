@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
-import { Providers } from "@/components/providers";
+import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "next-themes";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,9 +16,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "SSE Expense Manager",
-  description: "Comprehensive expense management and material requisition system",
+  description: "Streamlined expense management for your organization. Manage expenses, requisitions, and cash advances.",
+  keywords: ["SSE", "Expense Manager", "Requisitions", "Cash Advances"],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/sse-logo.webp",
   },
 };
 
@@ -31,12 +32,16 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
-        suppressHydrationWarning
       >
-        <Providers>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          disableTransitionOnChange
+        >
           {children}
           <Toaster />
-        </Providers>
+        </ThemeProvider>
       </body>
     </html>
   );

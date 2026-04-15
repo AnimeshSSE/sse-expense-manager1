@@ -1,269 +1,204 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { Prisma } from '@prisma/client';
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    // Expense totals by status
+    const expenseByStatus = await db.expense.groupBy({
+      by: ["status"],
+      _sum: { totalAmount: true },
+      _count: true,
+    });
+
+    // Requisition totals by status
+    const requisitionByStatus = await db.requisition.groupBy({
+      by: ["status"],
+      _sum: { totalAmount: true },
+      _count: true,
+    });
+
+    // Advance totals by status
+    const advanceByStatus = await db.advance.groupBy({
+      by: ["status"],
+      _sum: { amount: true },
+      _count: true,
+    });
+
+    // Monthly expense trend (last 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const monthlyExpenses = await db.expense.findMany({
+      where: {
+        createdAt: { gte: sixMonthsAgo },
+      },
+      select: {
+        totalAmount: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    // Group by month
+    const monthlyTrend: Record<string, { month: string; total: number; count: number }> = {};
+    for (const expense of monthlyExpenses) {
+      const key = expense.createdAt.toISOString().slice(0, 7); // YYYY-MM
+      if (!monthlyTrend[key]) {
+        monthlyTrend[key] = {
+          month: key,
+          total: 0,
+          count: 0,
+        };
+      }
+      monthlyTrend[key].total += expense.totalAmount;
+      monthlyTrend[key].count += 1;
     }
+    const monthlyExpenseTrend = Object.values(monthlyTrend).sort((a, b) =>
+      a.month.localeCompare(b.month)
+    );
 
-    const { searchParams } = new URL(request.url);
-    const view = searchParams.get('view');
+    // Department breakdown
+    const departmentBreakdown = await db.user.groupBy({
+      by: ["department"],
+      _count: { id: true },
+      where: {
+        department: { not: null },
+        status: "ACTIVE",
+      },
+    });
 
-    // If view=balances, return user balance data
-    if (view === 'balances') {
-      return handleUserBalances(searchParams, session);
-    }
+    const expenseByDepartment = await db.expense.groupBy({
+      by: ["department"],
+      _sum: { totalAmount: true },
+      _count: true,
+      where: {
+        department: { not: null },
+      },
+    });
 
-    const viewAsUserId = searchParams.get('userId');
-    const clientId = searchParams.get('clientId');
-    const siteId = searchParams.get('siteId');
-    const month = searchParams.get('month');
+    const departments = departmentBreakdown
+      .map((d) => {
+        const deptExpense = expenseByDepartment.find(
+          (e) => e.department === d.department
+        );
+        return {
+          department: d.department,
+          userCount: d._count.id,
+          totalExpenseAmount: deptExpense?._sum.totalAmount || 0,
+          expenseCount: deptExpense?._count || 0,
+        };
+      })
+      .sort((a, b) => (b.totalExpenseAmount || 0) - (a.totalExpenseAmount || 0));
 
-    const now = new Date();
-    let startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    let endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-    let dateFrom: Date | undefined;
-    let dateTo: Date | undefined;
+    // Recent activity (last 10 items across all types)
+    const recentExpenses = await db.expense.findMany({
+      take: 5,
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        totalAmount: true,
+        updatedAt: true,
+        user: { select: { name: true } },
+      },
+    });
 
-    if (month) {
-      const [year, mon] = month.split('-').map(Number);
-      startOfMonth = new Date(year, mon - 1, 1);
-      endOfMonth = new Date(year, mon, 0, 23, 59, 59);
-      dateFrom = startOfMonth;
-      dateTo = endOfMonth;
-    }
+    const recentRequisitions = await db.requisition.findMany({
+      take: 5,
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        totalAmount: true,
+        updatedAt: true,
+        user: { select: { name: true } },
+      },
+    });
 
-    // Build role-based expense filters
-    const expenseWhere: Prisma.ExpenseWhereInput = {};
-    if (viewAsUserId && checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
-      expenseWhere.userId = viewAsUserId;
-    } else if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
-      expenseWhere.userId = session.id;
-    }
+    const recentAdvances = await db.advance.findMany({
+      take: 5,
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        amount: true,
+        updatedAt: true,
+        user: { select: { name: true } },
+      },
+    });
 
-    if (clientId) {
-      expenseWhere.site = { clientId };
-    }
-    if (siteId) {
-      expenseWhere.siteId = siteId;
-    }
+    // Merge and sort all recent activities
+    const allActivity = [
+      ...recentExpenses.map((e) => ({
+        id: e.id,
+        type: "EXPENSE" as const,
+        title: e.title,
+        status: e.status,
+        amount: e.totalAmount,
+        updatedAt: e.updatedAt,
+        userName: e.user.name,
+      })),
+      ...recentRequisitions.map((r) => ({
+        id: r.id,
+        type: "REQUISITION" as const,
+        title: r.title,
+        status: r.status,
+        amount: r.totalAmount,
+        updatedAt: r.updatedAt,
+        userName: r.user.name,
+      })),
+      ...recentAdvances.map((a) => ({
+        id: a.id,
+        type: "ADVANCE" as const,
+        title: a.title,
+        status: a.status,
+        amount: a.amount,
+        updatedAt: a.updatedAt,
+        userName: a.user.name,
+      })),
+    ];
 
-    const mirWhere: Prisma.RequisitionWhereInput = {};
-    if (viewAsUserId && checkPermission(session.role, 'VIEW_ALL_MIRS')) {
-      mirWhere.userId = viewAsUserId;
-    } else if (!checkPermission(session.role, 'VIEW_ALL_MIRS')) {
-      mirWhere.userId = session.id;
-    }
+    allActivity.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
 
-    if (clientId) {
-      mirWhere.site = { clientId };
-    }
-    if (siteId) {
-      mirWhere.siteId = siteId;
-    }
+    const recentActivity = allActivity.slice(0, 10);
 
-    const thisMonthExpenseWhere: Prisma.ExpenseWhereInput = {
-      ...expenseWhere,
-      expenseDate: { gte: dateFrom || startOfMonth, lte: dateTo || endOfMonth },
-    };
-
-    const thisMonthMirWhere: Prisma.RequisitionWhereInput = {
-      ...mirWhere,
-      createdAt: { gte: dateFrom || startOfMonth, lte: dateTo || endOfMonth },
-    };
-
-    const [
-      thisMonthExpenses,
-      pendingExpenses,
-      accountantApprovedExpenses,
-      adminApprovedExpenses,
-      paidExpenses,
-      pendingMirs,
-      stockMgrApprovedMirs,
-      adminApprovedMirs,
-      thisMonthMirs,
-      recentExpenses,
-      recentMirs,
-    ] = await Promise.all([
-      db.expense.aggregate({
-        where: thisMonthExpenseWhere,
-        _sum: { amount: true },
-        _count: true,
-      }),
-      db.expense.aggregate({
-        where: { ...expenseWhere, status: 'PENDING' },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      db.expense.aggregate({
-        where: { ...expenseWhere, status: 'ACCOUNTANT_APPROVED' },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      db.expense.aggregate({
-        where: { ...expenseWhere, status: 'ADMIN_APPROVED' },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      db.expense.aggregate({
-        where: { ...expenseWhere, status: 'PAID' },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      db.requisition.aggregate({
-        where: { ...mirWhere, status: 'PENDING' },
-        _sum: { totalAmount: true },
-        _count: true,
-      }),
-      db.requisition.aggregate({
-        where: { ...mirWhere, status: 'STOCK_MANAGER_APPROVED' },
-        _sum: { totalAmount: true },
-        _count: true,
-      }),
-      db.requisition.aggregate({
-        where: { ...mirWhere, status: 'ADMIN_APPROVED' },
-        _sum: { totalAmount: true },
-        _count: true,
-      }),
-      db.requisition.aggregate({
-        where: thisMonthMirWhere,
-        _sum: { totalAmount: true },
-        _count: true,
-      }),
-      db.expense.findMany({
-        where: expenseWhere,
-        include: {
-          site: { include: { client: { select: { name: true } } } },
-          category: { select: { name: true } },
-          user: { select: { name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-      }),
-      db.requisition.findMany({
-        where: mirWhere,
-        include: {
-          site: { include: { client: { select: { name: true } } } },
-          user: { select: { name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-      }),
-    ]);
+    // Summary totals
+    const totalExpenseAmount = expenseByStatus.reduce(
+      (sum, e) => sum + (e._sum.totalAmount || 0),
+      0
+    );
+    const totalRequisitionAmount = requisitionByStatus.reduce(
+      (sum, r) => sum + (r._sum.totalAmount || 0),
+      0
+    );
+    const totalAdvanceAmount = advanceByStatus.reduce(
+      (sum, a) => sum + (a._sum.amount || 0),
+      0
+    );
 
     return NextResponse.json({
-      thisMonthExpenses: {
-        total: thisMonthExpenses._sum.amount || 0,
-        count: thisMonthExpenses._count,
+      summary: {
+        totalExpenseAmount,
+        totalRequisitionAmount,
+        totalAdvanceAmount,
       },
-      pendingExpenses: {
-        count: pendingExpenses._count,
-        total: pendingExpenses._sum.amount || 0,
-      },
-      accountantApprovedExpenses: {
-        count: accountantApprovedExpenses._count,
-        total: accountantApprovedExpenses._sum.amount || 0,
-      },
-      adminApprovedExpenses: {
-        count: adminApprovedExpenses._count,
-        total: adminApprovedExpenses._sum.amount || 0,
-      },
-      paidExpenses: {
-        count: paidExpenses._count,
-        total: paidExpenses._sum.amount || 0,
-      },
-      pendingMirs: {
-        count: pendingMirs._count,
-        total: pendingMirs._sum.totalAmount || 0,
-      },
-      stockMgrApprovedMirs: {
-        count: stockMgrApprovedMirs._count,
-        total: stockMgrApprovedMirs._sum.totalAmount || 0,
-      },
-      adminApprovedMirs: {
-        count: adminApprovedMirs._count,
-        total: adminApprovedMirs._sum.totalAmount || 0,
-      },
-      thisMonthMirs: {
-        count: thisMonthMirs._count,
-        total: thisMonthMirs._sum.totalAmount || 0,
-      },
-      recentExpenses,
-      recentMirs,
+      expenseByStatus,
+      requisitionByStatus,
+      advanceByStatus,
+      monthlyExpenseTrend,
+      departmentBreakdown: departments,
+      recentActivity,
     });
-  } catch (error: any) {
-    console.error('Dashboard error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (error) {
+    console.error("GET dashboard error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
-}
-
-async function handleUserBalances(searchParams: URLSearchParams, session: any) {
-  if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  const clientId = searchParams.get('clientId');
-  const siteId = searchParams.get('siteId');
-  const month = searchParams.get('month');
-  const userId = searchParams.get('userId');
-
-  let dateFrom: Date | undefined;
-  let dateTo: Date | undefined;
-  if (month) {
-    const [year, mon] = month.split('-').map(Number);
-    dateFrom = new Date(year, mon - 1, 1);
-    dateTo = new Date(year, mon, 0, 23, 59, 59);
-  }
-
-  const expenseWhere: Prisma.ExpenseWhereInput = {
-    status: { in: ['ACCOUNTANT_APPROVED', 'ADMIN_APPROVED', 'PAID'] },
-  };
-  const advanceWhere: Prisma.AdvanceWhereInput = { status: 'PAID' };
-
-  if (userId) { expenseWhere.userId = userId; advanceWhere.userId = userId; }
-  if (clientId) { expenseWhere.site = { clientId }; advanceWhere.site = { clientId }; }
-  if (siteId) { expenseWhere.siteId = siteId; advanceWhere.siteId = siteId; }
-  if (dateFrom && dateTo) {
-    expenseWhere.expenseDate = { gte: dateFrom, lte: dateTo };
-    advanceWhere.createdAt = { gte: dateFrom, lte: dateTo };
-  }
-
-  const users = await db.user.findMany({
-    where: { isActive: true },
-    select: { id: true, name: true, email: true, role: true },
-    orderBy: { name: 'asc' },
-  });
-
-  const targetUsers = userId ? users.filter((u) => u.id === userId) : users;
-
-  const balances = await Promise.all(
-    targetUsers.map(async (user) => {
-      const [expenseAgg, advanceAgg] = await Promise.all([
-        db.expense.aggregate({
-          where: { ...expenseWhere, userId: user.id },
-          _sum: { amount: true },
-          _count: true,
-        }),
-        db.advance.aggregate({
-          where: { ...advanceWhere, userId: user.id },
-          _sum: { amount: true },
-          _count: true,
-        }),
-      ]);
-      const totalExpenses = expenseAgg._sum.amount || 0;
-      const totalAdvances = advanceAgg._sum.amount || 0;
-      return {
-        userId: user.id, name: user.name, email: user.email, role: user.role,
-        totalAdvances, advanceCount: advanceAgg._count,
-        totalExpenses, expenseCount: expenseAgg._count,
-        balance: totalAdvances - totalExpenses,
-      };
-    })
-  );
-
-  return NextResponse.json({ balances });
 }

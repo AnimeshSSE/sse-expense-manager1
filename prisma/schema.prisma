@@ -1,217 +1,290 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:../db/dev.db"
+  provider  = "sqlite"
+  url       = "file:./dev.db"
 }
+
+// ==================== ENUMS ====================
+
+enum Role {
+  ADMIN
+  ACCOUNTANT
+  STOCK_MANAGER
+  USER
+}
+
+enum ExpenseStatus {
+  PENDING
+  ACCOUNTANT_APPROVED
+  ADMIN_APPROVED
+  REJECTED
+  RETURNED
+  PAID
+}
+
+enum RequisitionStatus {
+  PENDING
+  STOCK_MANAGER_APPROVED
+  ADMIN_APPROVED
+  REJECTED
+  RETURNED
+  ORDERED
+  RECEIVED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CREDIT
+  OFFICE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum CategoryType {
+  EXPENSE
+  REQUISITION
+  BOTH
+}
+
+enum AdvanceStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+  RETURNED
+}
+
+// ==================== MODELS ====================
 
 model User {
-  id         String   @id @default(cuid())
-  name       String
-  email      String   @unique
-  password   String   @default("changeme123")
-  role       String   @default("EMPLOYEE")
-  department String?
-  employeeId String?
-  phone      String?
-  status     String   @default("ACTIVE")
-  avatar     String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  name         String
+  role         Role     @default(USER)
+  isActive     Boolean  @default(true)
+  token        String?  @unique
+  tokenExpiry  DateTime?
+  lastLogin    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  expenses      Expense[]
-  requisitions  Requisition[]
-  advances      Advance[]
-  approvedExpenses     Expense[]     @relation("ExpenseApprover")
-  approvedRequisitions Requisition[] @relation("RequisitionApprover")
-  approvedAdvances     Advance[]     @relation("AdvanceApprover")
-  auditLogs     AuditLog[]
-  preferences   UserPreferences?
-}
-
-model ExpenseCategory {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  code      String   @unique
-  createdAt DateTime @default(now())
-
-  expenseItems ExpenseItem[]
-}
-
-model Expense {
-  id             String   @id @default(cuid())
-  title          String
-  description    String?
-  status         String   @default("DRAFT")
-  totalAmount    Float    @default(0)
-  submittedDate  DateTime?
-  userId         String
-  department     String?
-  approvedById   String?
-  approvedAt     DateTime?
-  rejectedReason String?
-  paymentDate    DateTime?
-  paymentRef     String?
-  siteId          String?
-  clientId        String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  user       User          @relation(fields: [userId], references: [id])
-  approvedBy User?         @relation("ExpenseApprover", fields: [approvedById], references: [id])
-  site       Site?         @relation(fields: [siteId], references: [id])
-  client     Client?       @relation(fields: [clientId], references: [id])
-  items      ExpenseItem[]
-  auditLogs  AuditLog[]
-}
-
-model ExpenseItem {
-  id          String   @id @default(cuid())
-  description String
-  amount      Float
-  date        DateTime
-  categoryId  String
-  expenseId   String
-  receiptUrl  String?
-  notes       String?
-  createdAt   DateTime @default(now())
-
-  category ExpenseCategory @relation(fields: [categoryId], references: [id])
-  expense  Expense         @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-}
-
-model Requisition {
-  id             String   @id @default(cuid())
-  title          String
-  description    String?
-  status         String   @default("DRAFT")
-  totalAmount    Float    @default(0)
-  submittedDate  DateTime?
-  userId         String
-  department     String?
-  approvedById   String?
-  approvedAt     DateTime?
-  rejectedReason String?
-  vendorName     String?
-  deliveryDate   DateTime?
-  siteId          String?
-  clientId        String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  user       User              @relation(fields: [userId], references: [id])
-  approvedBy User?             @relation("RequisitionApprover", fields: [approvedById], references: [id])
-  site       Site?             @relation(fields: [siteId], references: [id])
-  client     Client?           @relation(fields: [clientId], references: [id])
-  items      RequisitionItem[]
-  auditLogs  AuditLog[]
-}
-
-model RequisitionItem {
-  id            String   @id @default(cuid())
-  description   String
-  quantity      Int
-  unitPrice     Float
-  totalAmount   Float
-  urgency       String   @default("NORMAL")
-  itemCode      String?
-  notes         String?
-  requisitionId String
-  createdAt     DateTime @default(now())
-
-  requisition Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-}
-
-model Advance {
-  id                String   @id @default(cuid())
-  title             String
-  description       String?
-  status            String   @default("DRAFT")
-  amount            Float
-  purpose           String
-  submittedDate     DateTime?
-  expectedReturnDate DateTime?
-  userId            String
-  department        String?
-  approvedById      String?
-  approvedAt        DateTime?
-  rejectedReason    String?
-  settlementAmount  Float?
-  settlementDate    DateTime?
-  siteId            String?
-  clientId          String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user       User        @relation(fields: [userId], references: [id])
-  approvedBy User?       @relation("AdvanceApprover", fields: [approvedById], references: [id])
-  site       Site?       @relation(fields: [siteId], references: [id])
-  client     Client?     @relation(fields: [clientId], references: [id])
-  auditLogs  AuditLog[]
-}
-
-model AuditLog {
-  id            String   @id @default(cuid())
-  action        String
-  entityType    String
-  entityId      String
-  userId        String
-  details       String?
-  createdAt     DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-  expense       Expense?       @relation(fields: [expenseId], references: [id])
-  expenseId     String?
-  requisition   Requisition?   @relation(fields: [requisitionId], references: [id])
-  requisitionId String?
-  advance       Advance?       @relation(fields: [advanceId], references: [id])
-  advanceId     String?
-}
-
-model Site {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  code      String   @unique
-  address   String?
-  city      String?
-  state     String?
-  pincode   String?
-  status    String   @default("ACTIVE")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  expenses     Expense[]
-  requisitions Requisition[]
-  advances     Advance[]
+  expenses             Expense[]
+  requisitions         Requisition[]
+  advances             Advance[]
+  auditLogs            AuditLog[]
+  comments             Comment[]
+  accountantApprovals  Expense[]    @relation("AccountantApprovals")
+  adminExpenseApprovals Expense[]    @relation("AdminExpenseApprovals")
+  adminMirApprovals    Requisition[] @relation("AdminMirApprovals")
+  stockMgrApprovals    Requisition[] @relation("StockMgrApprovals")
+  advanceAcctApprovals  Advance[]    @relation("AdvanceAcctApprovals")
+  advanceAdminApprovals Advance[]    @relation("AdvanceAdminApprovals")
+  advancePaidApprovals  Advance[]    @relation("AdvancePaidBy")
 }
 
 model Client {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  code      String   @unique
-  email     String?
-  phone     String?
-  address   String?
-  city      String?
-  state     String?
-  status    String   @default("ACTIVE")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  expenses     Expense[]
-  requisitions Requisition[]
-  advances     Advance[]
+  sites    Site[]
 }
 
-model UserPreferences {
+model Site {
+  id          String    @id @default(cuid())
+  name        String
+  clientId    String
+  location    String?
+  description String?
+  budget      Float     @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  client      Client       @relation(fields: [clientId], references: [id])
+  expenses    Expense[]
+  requisitions Requisition[]
+  advances    Advance[]
+
+  @@index([clientId])
+}
+
+model Category {
+  id          String       @id @default(cuid())
+  name        String
+  type        CategoryType @default(BOTH)
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  expenses Expense[]
+}
+
+model Expense {
+  id                     String        @id @default(cuid())
+  siteId                 String
+  categoryId             String
+  userId                 String
+  amount                 Float
+  description            String
+  expenseDate            DateTime
+  submissionDate         DateTime      @default(now())
+  sellerName             String?
+  invoiceNumber          String?
+  paymentMethod          PaymentMethod @default(CASH)
+  status                 ExpenseStatus @default(PENDING)
+  receiptUrl             String?
+  receiptFileName        String?
+  notes                  String?
+  accountantApprovedById String?
+  accountantApprovedAt   DateTime?
+  adminApprovedById      String?
+  adminApprovedAt        DateTime?
+  rejectionReason        String?
+  returnReason           String?
+  isLateSubmission       Boolean       @default(false)
+  daysLate               Int           @default(0)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  site                   Site          @relation(fields: [siteId], references: [id])
+  category               Category      @relation(fields: [categoryId], references: [id])
+  user                   User          @relation(fields: [userId], references: [id])
+  accountantApprovedBy   User?         @relation("AccountantApprovals", fields: [accountantApprovedById], references: [id])
+  adminApprovedBy        User?         @relation("AdminExpenseApprovals", fields: [adminApprovedById], references: [id])
+
+  @@index([siteId])
+  @@index([categoryId])
+  @@index([userId])
+  @@index([status])
+}
+
+model Requisition {
+  id                      String             @id @default(cuid())
+  siteId                  String
+  userId                  String
+  title                   String
+  description             String?
+  requiredDate            DateTime
+  priority                Priority           @default(MEDIUM)
+  status                  RequisitionStatus  @default(PENDING)
+  totalAmount             Float              @default(0)
+  notes                   String?
+  attachmentUrl           String?
+  attachmentName          String?
+  stockManagerApprovedById String?
+  stockManagerApprovedAt  DateTime?
+  adminApprovedById       String?
+  adminApprovedAt         DateTime?
+  rejectionReason         String?
+  returnReason            String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  site                    Site               @relation(fields: [siteId], references: [id])
+  user                    User               @relation(fields: [userId], references: [id])
+  boqItems                BOQItem[]
+  stockManagerApprovedBy  User?              @relation("StockMgrApprovals", fields: [stockManagerApprovedById], references: [id])
+  adminApprovedBy         User?              @relation("AdminMirApprovals", fields: [adminApprovedById], references: [id])
+
+  @@index([siteId])
+  @@index([userId])
+  @@index([status])
+}
+
+model BOQItem {
   id            String   @id @default(cuid())
-  userId        String   @unique
-  tableSettings String   @default("{}")
+  requisitionId String
+  itemName      String
+  description   String?
+  quantity      Float
+  unit          String
+  unitPrice     Float
+  totalPrice    Float
+  category      String?
+  notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@index([requisitionId])
+}
+
+model Advance {
+  id                     String         @id @default(cuid())
+  userId                 String
+  siteId                 String
+  amount                 Float
+  purpose                String
+  status                 AdvanceStatus  @default(PENDING)
+  notes                  String?
+  accountantApprovedById String?
+  accountantApprovedAt   DateTime?
+  adminApprovedById      String?
+  adminApprovedAt        DateTime?
+  paidById               String?
+  paidAt                 DateTime?
+  rejectionReason        String?
+  returnReason           String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  user                   User           @relation(fields: [userId], references: [id])
+  site                   Site           @relation(fields: [siteId], references: [id])
+  accountantApprovedBy   User?          @relation("AdvanceAcctApprovals", fields: [accountantApprovedById], references: [id])
+  adminApprovedBy        User?          @relation("AdvanceAdminApprovals", fields: [adminApprovedById], references: [id])
+  paidBy                 User?          @relation("AdvancePaidBy", fields: [paidById], references: [id])
+
+  @@index([userId])
+  @@index([siteId])
+  @@index([status])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  userId     String
+  content    String
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([entityType])
+  @@index([entityId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String?
+  oldValues  String?
+  newValues  String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
 }

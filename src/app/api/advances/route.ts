@@ -1,221 +1,160 @@
-import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { Prisma, AdvanceStatus, Role } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
-    const userId = searchParams.get("userId");
-    const department = searchParams.get("department");
-    const search = searchParams.get("search");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '20');
+    const status = searchParams.get('status');
+    const userId = searchParams.get('userId');
+    const siteId = searchParams.get('siteId');
+    const clientId = searchParams.get('clientId');
+    const sortBy = searchParams.get('sortBy') || 'createdAt';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
+    const search = searchParams.get('search');
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
+    const month = searchParams.get('month');
 
-    const where: Record<string, unknown> = {};
+    const where: Prisma.AdvanceWhereInput = {};
 
+    // Role-based filtering: users see own, admin/accountant see all
+    if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+      where.userId = session.id;
+    }
+
+    if (userId) where.userId = userId;
     if (status) {
-      where.status = status;
+      const statuses = status.split(',').filter(Boolean) as AdvanceStatus[];
+      if (statuses.length === 1) where.status = statuses[0];
+      else if (statuses.length > 1) where.status = { in: statuses };
     }
-
-    if (userId) {
-      where.userId = userId;
+    if (siteId) where.siteId = siteId;
+    if (clientId) where.site = { clientId };
+    if (dateFrom || dateTo || month) {
+      let from: Date | undefined;
+      let to: Date | undefined;
+      if (month) {
+        const [year, mon] = month.split('-').map(Number);
+        from = new Date(year, mon - 1, 1);
+        to = new Date(year, mon, 0, 23, 59, 59);
+      } else {
+        if (dateFrom) from = new Date(dateFrom);
+        if (dateTo) to = new Date(dateTo);
+      }
+      where.createdAt = { ...(from && { gte: from }), ...(to && { lte: to }) };
     }
-
-    if (department) {
-      where.department = department;
-    }
-
     if (search) {
       where.OR = [
-        { title: { contains: search } },
         { purpose: { contains: search } },
+        { notes: { contains: search } },
         { user: { name: { contains: search } } },
+        { site: { name: { contains: search } } },
       ];
     }
 
-    const skip = (page - 1) * limit;
+    const validSortFields = ['createdAt', 'amount', 'status', 'updatedAt'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
 
     const [advances, total] = await Promise.all([
       db.advance.findMany({
         where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: "desc" },
         include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              department: true,
-              employeeId: true,
-            },
-          },
-          approvedBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
+          site: { include: { client: { select: { id: true, name: true } } } },
+          user: { select: { id: true, name: true, email: true } },
+          accountantApprovedBy: { select: { id: true, name: true } },
+          adminApprovedBy: { select: { id: true, name: true } },
+          paidBy: { select: { id: true, name: true } },
         },
+        orderBy: { [sortField]: sortOrder === 'asc' ? 'asc' : 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
       }),
       db.advance.count({ where }),
     ]);
 
     return NextResponse.json({
       advances,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     });
-  } catch (error) {
-    console.error("GET advances error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error('Get advances error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { title, description, userId, department, amount, purpose, expectedReturnDate } = body;
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
 
-    if (!title || !userId || !amount || !purpose) {
+    const body = await request.json();
+    const { siteId, amount, purpose, notes } = body;
+
+    if (!siteId || !amount || !purpose) {
       return NextResponse.json(
-        { error: "Title, userId, amount, and purpose are required" },
+        { error: 'Site, amount, and purpose are required' },
         { status: 400 }
+      );
+    }
+
+    const siteExists = await db.site.findUnique({ where: { id: siteId } });
+    if (!siteExists) {
+      return NextResponse.json({ error: 'Site not found' }, { status: 404 });
+    }
+
+    // Duplicate detection: check if user has a pending advance with same amount and site
+    const existingAdvance = await db.advance.findFirst({
+      where: {
+        userId: session.id,
+        siteId,
+        amount: parseFloat(amount),
+        status: 'PENDING',
+      },
+    });
+    if (existingAdvance) {
+      return NextResponse.json(
+        { error: 'You already have a pending advance of ₹' + amount + ' for this site', duplicateId: existingAdvance.id },
+        { status: 409 }
       );
     }
 
     const advance = await db.advance.create({
       data: {
-        title,
-        description: description || null,
+        userId: session.id,
+        siteId,
         amount: parseFloat(amount),
         purpose,
-        userId,
-        department: department || null,
-        expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+        notes: notes || null,
       },
       include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            department: true,
-          },
-        },
+        site: { include: { client: { select: { id: true, name: true } } } },
+        user: { select: { id: true, name: true, email: true } },
       },
+    });
+
+    await createAuditLog({
+      userId: session.id,
+      action: 'CREATE_ADVANCE',
+      entityType: 'ADVANCE',
+      entityId: advance.id,
+      newValues: formatAuditValues({ siteId, amount: parseFloat(amount), purpose }),
     });
 
     return NextResponse.json({ advance }, { status: 201 });
-  } catch (error) {
-    console.error("POST advances error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const {
-      id,
-      title,
-      description,
-      department,
-      status,
-      amount,
-      purpose,
-      expectedReturnDate,
-      settlementAmount,
-      settlementDate,
-      userRole,
-    } = body;
-
-    if (!id) {
-      return NextResponse.json(
-        { error: "Advance ID is required" },
-        { status: 400 }
-      );
-    }
-
-    const existing = await db.advance.findUnique({ where: { id } });
-
-    if (!existing) {
-      return NextResponse.json({ error: "Advance not found" }, { status: 404 });
-    }
-
-    if (existing.status !== "DRAFT" && existing.status !== "SUBMITTED") {
-      return NextResponse.json(
-        { error: `Cannot edit advance with status ${existing.status}` },
-        { status: 400 }
-      );
-    }
-
-    // Stock Manager and Admin can edit SUBMITTED advances
-    if (
-      existing.status === "SUBMITTED" &&
-      userRole !== "STOCK_MANAGER" &&
-      userRole !== "ADMIN"
-    ) {
-      return NextResponse.json(
-        { error: "Only Stock Manager or Admin can edit submitted advances" },
-        { status: 403 }
-      );
-    }
-
-    const advance = await db.advance.update({
-      where: { id },
-      data: {
-        ...(title !== undefined && { title }),
-        ...(description !== undefined && { description }),
-        ...(department !== undefined && { department }),
-        ...(status !== undefined && { status }),
-        ...(amount !== undefined && { amount: parseFloat(amount) }),
-        ...(purpose !== undefined && { purpose }),
-        ...(expectedReturnDate !== undefined && {
-          expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
-        }),
-        ...(settlementAmount !== undefined && {
-          settlementAmount: settlementAmount ? parseFloat(settlementAmount) : null,
-        }),
-        ...(settlementDate !== undefined && {
-          settlementDate: settlementDate ? new Date(settlementDate) : null,
-        }),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            department: true,
-          },
-        },
-        approvedBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-    });
-
-    return NextResponse.json({ advance });
-  } catch (error) {
-    console.error("PUT advances error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error('Create advance error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

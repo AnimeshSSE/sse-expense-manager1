@@ -1,12 +1,51 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type ExpenseCategory, type User } from '@prisma/client';
 const prisma = new PrismaClient();
+
+type SeedExpense = {
+  userIdx: number;
+  title: string;
+  status: string;
+  dept: string;
+  items: Array<{
+    desc: string;
+    amount: number;
+    catIdx: number;
+    daysAgo: number;
+  }>;
+};
+
+type SeedRequisition = {
+  userIdx: number;
+  title: string;
+  status: string;
+  dept: string;
+  vendor: string;
+  delivery: number;
+  items: Array<{
+    desc: string;
+    qty: number;
+    price: number;
+    urgency: string;
+  }>;
+};
+
+type SeedAdvance = {
+  userIdx: number;
+  title: string;
+  status: string;
+  amount: number;
+  dept: string;
+  purpose: string;
+  expectedReturn: number;
+  settlement?: number;
+};
 
 async function seed() {
   // Create departments as simple references
   const departments = ['Engineering', 'Finance', 'Operations', 'Marketing', 'HR', 'Sales'];
 
   // Create users
-  const users = [];
+  const users: User[] = [];
   const userData = [
     { name: 'Admin User', email: 'admin@sse.com', role: 'ADMIN', department: 'Finance', employeeId: 'EMP001', phone: '+91-9876543210' },
     { name: 'Rajesh Kumar', email: 'rajesh@sse.com', role: 'MANAGER', department: 'Engineering', employeeId: 'EMP002', phone: '+91-9876543211' },
@@ -25,7 +64,7 @@ async function seed() {
   }
 
   // Create expense categories
-  const categories = [];
+  const categories: ExpenseCategory[] = [];
   const catData = [
     { name: 'Travel', code: 'TRVL' },
     { name: 'Meals & Entertainment', code: 'MEAL' },
@@ -43,7 +82,7 @@ async function seed() {
   }
 
   // Create expenses with items
-  const expenseData = [
+  const expenseData: SeedExpense[] = [
     { userIdx: 3, title: 'Bangalore Client Visit', status: 'APPROVED', dept: 'Engineering', items: [
       { desc: 'Flight tickets - BLR round trip', amount: 8500, catIdx: 0, daysAgo: 25 },
       { desc: 'Hotel stay - 2 nights', amount: 4200, catIdx: 5, daysAgo: 25 },
@@ -127,7 +166,7 @@ async function seed() {
   }
 
   // Create requisitions with items
-  const requisitionData = [
+  const requisitionData: SeedRequisition[] = [
     { userIdx: 3, title: 'Laptop for New Hire', status: 'APPROVED', dept: 'Engineering', vendor: 'Dell India', delivery: 10, items: [
       { desc: 'Dell Latitude 5540', qty: 1, price: 65000, urgency: 'HIGH' },
       { desc: 'Docking station', qty: 1, price: 8000, urgency: 'NORMAL' },
@@ -190,7 +229,7 @@ async function seed() {
   }
 
   // Create advances
-  const advanceData = [
+  const advanceData: SeedAdvance[] = [
     { userIdx: 3, title: 'Delhi Client Meeting Advance', status: 'APPROVED', amount: 15000, dept: 'Engineering', purpose: 'Travel and accommodation for Delhi client meeting', expectedReturn: 30 },
     { userIdx: 6, title: 'Exhibition Setup Advance', status: 'DISBURSED', amount: 25000, dept: 'Marketing', purpose: 'Advance for setting up exhibition booth at trade fair', expectedReturn: 15 },
     { userIdx: 5, title: 'Emergency Supplies Advance', status: 'SUBMITTED', amount: 10000, dept: 'Operations', purpose: 'Emergency warehouse supplies purchase', expectedReturn: 7 },

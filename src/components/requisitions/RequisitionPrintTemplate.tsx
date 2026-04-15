@@ -49,7 +49,7 @@ function RequisitionPrintContent({ requisition }: { requisition: Record<string, 
     <div className="bg-white text-black p-8 max-w-[210mm] mx-auto min-h-[297mm]">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
-          <img src="/sse-logo.webp" alt="SSE" className="h-14 w-14" />
+          <img src="/sse-logo.svg" alt="SSE" className="h-14 w-14" />
           <div>
             <h1 className="text-2xl font-bold text-gray-900">SSE Purchase Requisition</h1>
             <p className="text-sm text-gray-500">Company Confidential</p>

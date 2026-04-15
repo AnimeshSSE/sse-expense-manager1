@@ -70,7 +70,7 @@ function LoginPage() {
         <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-4">
             <div className="flex justify-center">
-              <img src="/sse-logo.webp" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
+              <img src="/sse-logo.svg" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
             </div>
             <h1 className="text-3xl font-bold">SSE Expense Manager</h1>
             <p className="text-destructive">Failed to load users. Please try again.</p>
@@ -86,7 +86,7 @@ function LoginPage() {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <img src="/sse-logo.webp" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
+            <img src="/sse-logo.svg" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">SSE Expense Manager</h1>

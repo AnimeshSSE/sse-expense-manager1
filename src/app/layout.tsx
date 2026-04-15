@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   description: "Streamlined expense management for your organization. Manage expenses, requisitions, and cash advances.",
   keywords: ["SSE", "Expense Manager", "Requisitions", "Cash Advances"],
   icons: {
-    icon: "/sse-logo.webp",
+    icon: "/sse-logo.svg",
   },
 };
 

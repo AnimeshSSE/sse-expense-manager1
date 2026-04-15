@@ -1,6 +1,6 @@
 'use client'
 
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useAppStore, type UserRole } from '@/lib/store'
 import { AppLayout } from '@/components/layout/AppLayout'
@@ -25,17 +25,93 @@ import { Settings } from '@/components/settings/Settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Shield, ArrowRight } from 'lucide-react'
+import { Shield, ArrowRight, Loader2 } from 'lucide-react'
+
+type LoginUser = {
+  id: string
+  name: string
+  role: string
+  department: string | null
+  email: string
+  employeeId: string | null
+  status: string
+}
+
+type UsersResponse = {
+  users: LoginUser[]
+}
 
 function LoginPage() {
   const { setCurrentUser } = useAppStore()
+  const queryClient = useQueryClient()
+  const [setupForm, setSetupForm] = useState({
+    name: '',
+    email: '',
+    department: '',
+  })
   const { data, isLoading, error } = useQuery({
     queryKey: ['users'],
-    queryFn: () => fetch('/api/users?limit=50').then(res => res.json()),
+    queryFn: async (): Promise<UsersResponse> => {
+      const res = await fetch('/api/users?limit=50')
+      const json = await res.json()
+
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to load users')
+      }
+
+      return json
+    },
   })
 
   const users = data?.users || []
+
+  const createAdminMutation = useMutation({
+    mutationFn: async () => {
+      const name = setupForm.name.trim()
+      const email = setupForm.email.trim()
+
+      if (!name || !email) {
+        throw new Error('Name and email are required')
+      }
+
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          department: setupForm.department.trim() || null,
+          role: 'ADMIN',
+          status: 'ACTIVE',
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to create the first admin account')
+      }
+
+      return json.user as LoginUser
+    },
+    onSuccess: (user) => {
+      queryClient.setQueryData<UsersResponse>(['users'], { users: [user] })
+      setCurrentUser({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role as UserRole,
+        department: user.department || '',
+        employeeId: user.employeeId || '',
+        status: user.status as 'ACTIVE' | 'INACTIVE',
+      })
+    },
+  })
 
   if (isLoading) {
     return (
@@ -70,12 +146,86 @@ function LoginPage() {
         <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-4">
             <div className="flex justify-center">
-              <img src="/sse-logo.webp" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
+              <img src="/sse-logo.svg" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
             </div>
             <h1 className="text-3xl font-bold">SSE Expense Manager</h1>
-            <p className="text-destructive">Failed to load users. Please try again.</p>
+            <p className="text-destructive">
+              {error instanceof Error ? error.message : 'Failed to load users. Please try again.'}
+            </p>
             <Button onClick={() => window.location.reload()}>Retry</Button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (users.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center space-y-4">
+            <div className="flex justify-center">
+              <img src="/sse-logo.svg" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">SSE Expense Manager</h1>
+              <p className="text-muted-foreground mt-1">
+                Streamlined expense management for your organization
+              </p>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Create First Admin</CardTitle>
+              <CardDescription>
+                No accounts exist yet. Create the first admin account to start using the application.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="setup-name">Name</Label>
+                <Input
+                  id="setup-name"
+                  value={setupForm.name}
+                  onChange={(event) => setSetupForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Admin name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="setup-email">Email</Label>
+                <Input
+                  id="setup-email"
+                  type="email"
+                  value={setupForm.email}
+                  onChange={(event) => setSetupForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="admin@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="setup-department">Department</Label>
+                <Input
+                  id="setup-department"
+                  value={setupForm.department}
+                  onChange={(event) => setSetupForm((current) => ({ ...current, department: event.target.value }))}
+                  placeholder="Finance"
+                />
+              </div>
+              {createAdminMutation.error instanceof Error && (
+                <p className="text-sm text-destructive">{createAdminMutation.error.message}</p>
+              )}
+              <Button
+                className="w-full"
+                onClick={() => createAdminMutation.mutate()}
+                disabled={createAdminMutation.isPending}
+              >
+                {createAdminMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Admin Account
+              </Button>
+            </CardContent>
+          </Card>
+
+          <p className="text-center text-xs text-muted-foreground">0 accounts available</p>
         </div>
       </div>
     )
@@ -86,7 +236,7 @@ function LoginPage() {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <img src="/sse-logo.webp" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
+            <img src="/sse-logo.svg" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">SSE Expense Manager</h1>

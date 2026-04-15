@@ -66,7 +66,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5">
         <img
-          src="/sse-logo.webp"
+          src="/sse-logo.svg"
           alt="SSE"
           className="h-9 w-9 rounded-lg flex-shrink-0"
         />

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create signed token
-    const token = await createToken(user.id, user.role);
+    const token = createToken(user.id, user.role);
 
     return NextResponse.json({
       user: {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       token,
     });
   } catch (error) {
-    console.error("Auth error:", error);
+    console.error("Auth error:", error instanceof Error ? error.message : error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/session";
+import { verifyTokenEdge } from "@/lib/session";
 
 export async function middleware(request: NextRequest) {
   // Only protect /api/ routes (except auth)

@@ -11,13 +11,21 @@ function createPrismaClient() {
     throw new Error('DATABASE_URL environment variable is not set')
   }
 
-  // Use libsql adapter for Turso (libsql://) or local SQLite (file:) URLs
-  if (databaseUrl.startsWith('libsql://') || databaseUrl.startsWith('file:')) {
-    const adapter = new PrismaLibSql({ url: databaseUrl })
+  // Use libsql adapter for Turso (libsql:// or https://)
+  if (databaseUrl.startsWith('libsql://') || databaseUrl.startsWith('https://')) {
+    const adapter = new PrismaLibSql({
+      url: databaseUrl,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    })
     return new PrismaClient({ adapter })
   }
 
-  // Fallback: standard PrismaClient without adapter
+  // Local SQLite (file:)
+  if (databaseUrl.startsWith('file:')) {
+    return new PrismaClient()
+  }
+
+  // Fallback
   return new PrismaClient()
 }
 

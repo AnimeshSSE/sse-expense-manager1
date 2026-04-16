@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { verifyToken, type SessionPayload } from "@/lib/session";
+import type { SessionPayload } from "@/lib/session";
 
 /**
  * Get the current user's session from the request headers.

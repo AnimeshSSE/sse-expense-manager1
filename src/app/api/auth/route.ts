@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { createToken, verifyToken } from "@/lib/session";
+import { createToken } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create signed token
-    const token = createToken(user.id, user.role);
+    const token = await createToken(user.id, user.role);
 
     return NextResponse.json({
       user: {

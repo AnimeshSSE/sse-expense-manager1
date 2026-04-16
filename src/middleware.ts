@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyTokenEdge } from "@/lib/session";
+import { verifyToken } from "@/lib/session";
 
 export async function middleware(request: NextRequest) {
   // Only protect /api/ routes (except auth)
@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
 
     // Verify token signature and expiry
     const token = authHeader.replace("Bearer ", "");
-    const session = await verifyTokenEdge(token);
+    const session = await verifyToken(token);
     if (!session) {
       return NextResponse.json(
         { error: "Unauthorized: Invalid or expired token" },

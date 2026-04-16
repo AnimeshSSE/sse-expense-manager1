@@ -15,6 +15,7 @@ import { BulkUploadDialog } from './BulkUploadDialog'
 import { UserForm } from './UserForm'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { toast } from 'sonner'
+import { authGet, authDelete } from '@/lib/fetch'
 
 const roleConfig: Record<UserRole, { label: string; className: string }> = {
   ADMIN: { label: 'Admin', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200' },
@@ -38,12 +39,12 @@ export function UserList() {
       const params = new URLSearchParams()
       if (roleFilter !== 'ALL') params.set('role', roleFilter)
       params.set('limit', '50')
-      return fetch(`/api/users?${params}`).then(res => res.json())
+      return authGet(`/api/users?${params}`)
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/users?id=${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/users?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('User deleted successfully')

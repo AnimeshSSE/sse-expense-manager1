@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore, formatCurrency, departments } from '@/lib/store'
+import { authGet, authPost, authPut } from '@/lib/fetch'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
@@ -36,7 +37,7 @@ function AdvanceFormInner({ advanceFormMode, selectedAdvanceId, currentUser, onC
 
   const { data: existingData, isLoading: isLoadingExisting } = useQuery({
     queryKey: ['advance', selectedAdvanceId],
-    queryFn: () => fetch(`/api/advances/${selectedAdvanceId}`).then(res => res.json()),
+    queryFn: () => authGet(`/api/advances/${selectedAdvanceId}`),
     enabled: advanceFormMode === 'edit' && !!selectedAdvanceId,
   })
 
@@ -58,11 +59,7 @@ function AdvanceFormInner({ advanceFormMode, selectedAdvanceId, currentUser, onC
   const isEdit = advanceFormMode === 'edit'
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/advances', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/advances', body).then(res => res.json()),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['advances'] })
       toast.success('Advance created')
@@ -72,11 +69,7 @@ function AdvanceFormInner({ advanceFormMode, selectedAdvanceId, currentUser, onC
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/advances', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/advances', body).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advances'] })
       queryClient.invalidateQueries({ queryKey: ['advance', selectedAdvanceId] })

@@ -27,6 +27,9 @@ const pageTitles: Record<string, string> = {
   expenses: 'Expenses',
   requisitions: 'Requisitions',
   advances: 'Advances',
+  sites: 'Sites',
+  clients: 'Clients',
+  categories: 'Categories',
   users: 'Users',
   settings: 'Settings',
 }
@@ -36,7 +39,7 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ onMenuClick }: AppHeaderProps) {
-  const { currentUser, currentPage, setCurrentPage } = useAppStore()
+  const { currentUser, currentPage, setCurrentPage, logout } = useAppStore()
 
   if (!currentUser) return null
 
@@ -117,7 +120,7 @@ export function AppHeader({ onMenuClick }: AppHeaderProps) {
                 Profile & Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive focus:text-destructive">
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={logout}>
                 Log out
               </DropdownMenuItem>
             </DropdownMenuContent>

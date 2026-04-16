@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { authGet } from '@/lib/fetch'
 import { useAppStore, formatCurrency } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -35,7 +36,7 @@ export function Dashboard() {
   const { currentUser, setCurrentPage } = useAppStore()
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
-    queryFn: () => fetch('/api/dashboard').then(res => res.json()),
+    queryFn: () => authGet('/api/dashboard'),
   })
 
   if (isLoading) {

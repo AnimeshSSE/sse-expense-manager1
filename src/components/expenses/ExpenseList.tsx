@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { authGet, authDelete } from '@/lib/fetch'
 import { GenericBulkUploadDialog } from '@/components/shared/GenericBulkUploadDialog'
 
 interface ExpenseListProps {
@@ -44,12 +45,12 @@ export function ExpenseList({ onCreateNew, onViewDetail }: ExpenseListProps) {
       params.set('limit', '50')
       if (currentUser?.id) params.set('userId', currentUser.id)
       if (currentUser?.role) params.set('userRole', currentUser.role)
-      return fetch(`/api/expenses?${params}`).then(res => res.json())
+      return authGet(`/api/expenses?${params}`)
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/expenses/${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/expenses/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       toast.success('Expense deleted successfully')

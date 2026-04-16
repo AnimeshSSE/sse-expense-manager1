@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress'
 import { Upload, Download, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { authFetch } from '@/lib/fetch'
 
 export type BulkUploadEntity = 'sites' | 'clients' | 'categories' | 'expenses' | 'requisitions' | 'advances'
 
@@ -172,7 +173,7 @@ export function GenericBulkUploadDialog({
   }
 
   const handleDownloadTemplate = () => {
-    fetch(`/api/${entity}/download-template`)
+    authFetch(`/api/${entity}/download-template`)
       .then(res => res.blob())
       .then(blob => {
         const url = URL.createObjectURL(blob)
@@ -203,7 +204,7 @@ export function GenericBulkUploadDialog({
       if (userId && ['expenses', 'requisitions', 'advances'].includes(entity)) {
         formData.append('userId', userId)
       }
-      return fetch(`/api/${entity}/bulk-upload`, {
+      return authFetch(`/api/${entity}/bulk-upload`, {
         method: 'POST',
         body: formData,
       }).then(res => res.json())

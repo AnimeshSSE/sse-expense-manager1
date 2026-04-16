@@ -1,48 +1,49 @@
 /**
  * sync-db.js
  *
- * This script replaces `prisma db push` for Turso deployments.
- * It reads the Prisma schema, generates SQL, and applies it directly
- * to your Turso database during the Vercel build.
+ * Connects to Turso during Vercel build and creates/updates all tables.
+ * Replaces `prisma db push` which doesn't support libsql:// URLs.
  *
- * Environment variables required on Vercel:
- *   DATABASE_URL      - Your Turso connection URL (libsql://...)
+ * Required Vercel env vars:
+ *   DATABASE_URL      - libsql://your-db-your-org.turso.io
  *   TURSO_AUTH_TOKEN  - Your Turso auth token
  */
 
-const { createClient } = require('@libsql/client')
-const { execSync } = require('child_process')
-const path = require('path')
-const fs = require('fs')
+import { createClient } from '@libsql/client'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { execSync } from 'node:child_process'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL
   const authToken = process.env.TURSO_AUTH_TOKEN
 
   if (!databaseUrl) {
-    console.log('⚠️  DATABASE_URL not set — skipping database sync (local dev mode)')
+    console.log('⚠️  DATABASE_URL not set — skipping database sync')
     return
   }
 
   if (!databaseUrl.startsWith('libsql://') && !databaseUrl.startsWith('https://')) {
-    console.log('⚠️  DATABASE_URL is not a Turso URL — skipping database sync (local dev mode)')
+    console.log('⚠️  DATABASE_URL is not a Turso URL — skipping database sync')
     return
   }
 
   console.log('🔄 Generating SQL schema from Prisma schema...')
 
-  // Generate SQL from Prisma schema (doesn't need a database connection)
   const sql = execSync(
     'npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script',
-    { encoding: 'utf-8', cwd: path.resolve(__dirname, '..') }
+    { encoding: 'utf-8', cwd: join(__dirname, '..') }
   )
 
   if (!sql || sql.trim().length === 0) {
-    console.log('✅ Schema is already up to date — no changes needed')
+    console.log('✅ Schema is already up to date')
     return
   }
 
-  console.log('🔄 Connecting to Turso database...')
+  console.log('🔄 Connecting to Turso...')
 
   const client = createClient({
     url: databaseUrl,
@@ -51,7 +52,6 @@ async function main() {
 
   console.log('🔄 Applying schema to Turso...')
 
-  // Split by statements and execute each one (handle IF NOT EXISTS gracefully)
   const statements = sql
     .split(';')
     .map(s => s.trim())
@@ -61,21 +61,19 @@ async function main() {
     try {
       await client.execute(stmt)
     } catch (err) {
-      // Ignore "already exists" errors (table/index already created)
       if (
         err.message.includes('already exists') ||
         err.message.includes('duplicate column') ||
         err.message.includes('duplicate table')
       ) {
-        console.log(`   ⏭️  Skipped (already exists): ${stmt.substring(0, 60)}...`)
+        console.log(`   ⏭️  Skipped (already exists)`)
       } else {
-        console.error(`   ❌ Error executing: ${stmt.substring(0, 100)}...`)
-        console.error(`   ${err.message}`)
+        console.error(`   ❌ Error: ${err.message}`)
       }
     }
   }
 
-  console.log('✅ Database schema synced to Turso successfully!')
+  console.log('✅ Database schema synced to Turso!')
 }
 
 main().catch(err => {

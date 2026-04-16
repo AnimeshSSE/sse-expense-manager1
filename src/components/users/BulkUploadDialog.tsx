@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress'
 import { Upload, Download, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { authFetch } from '@/lib/fetch'
 
 interface ParsedUser {
   name: string
@@ -109,7 +110,7 @@ export function BulkUploadDialog({ open, onOpenChange }: BulkUploadDialogProps) 
   }
 
   const handleDownloadTemplate = () => {
-    fetch('/api/users/download-template')
+    authFetch('/api/users/download-template')
       .then(res => res.blob())
       .then(blob => {
         const url = URL.createObjectURL(blob)
@@ -126,7 +127,7 @@ export function BulkUploadDialog({ open, onOpenChange }: BulkUploadDialogProps) 
       if (!file) throw new Error('No file')
       const formData = new FormData()
       formData.append('file', file)
-      return fetch('/api/users/bulk-upload', {
+      return authFetch('/api/users/bulk-upload', {
         method: 'POST',
         body: formData,
       }).then(res => res.json())

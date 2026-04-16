@@ -15,6 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
+import { authPost, authPut } from '@/lib/fetch'
 
 interface UserFormInnerProps {
   user: User | null
@@ -32,11 +33,7 @@ function UserFormInner({ user, onClose }: UserFormInnerProps) {
   const isEdit = !!user
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/users', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('User created successfully')
@@ -48,11 +45,7 @@ function UserFormInner({ user, onClose }: UserFormInnerProps) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/users', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/users', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('User updated successfully')

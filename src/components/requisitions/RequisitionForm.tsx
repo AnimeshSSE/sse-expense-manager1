@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { authGet, authPost, authPut } from '@/lib/fetch'
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9)
@@ -60,7 +61,7 @@ function RequisitionFormInner({ requisitionFormMode, selectedRequisitionId, curr
 
   const { data: existingData, isLoading: isLoadingExisting } = useQuery({
     queryKey: ['requisition', selectedRequisitionId],
-    queryFn: () => fetch(`/api/requisitions/${selectedRequisitionId}`).then(res => res.json()),
+    queryFn: () => authGet(`/api/requisitions/${selectedRequisitionId}`),
     enabled: requisitionFormMode === 'edit' && !!selectedRequisitionId,
   })
 
@@ -101,11 +102,7 @@ function RequisitionFormInner({ requisitionFormMode, selectedRequisitionId, curr
   }
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/requisitions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/requisitions', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
       toast.success('Requisition created')
@@ -115,11 +112,7 @@ function RequisitionFormInner({ requisitionFormMode, selectedRequisitionId, curr
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/requisitions', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/requisitions', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
       queryClient.invalidateQueries({ queryKey: ['requisition', selectedRequisitionId] })

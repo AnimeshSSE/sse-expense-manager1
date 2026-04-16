@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { authPost, authPut } from '@/lib/fetch'
 
 export interface ClientData {
   id: string
@@ -41,11 +42,7 @@ function ClientFormInner({ client, onClose }: ClientFormInnerProps) {
   const isEdit = !!client
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/clients', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/clients', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Client created successfully')
@@ -55,11 +52,7 @@ function ClientFormInner({ client, onClose }: ClientFormInnerProps) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/clients', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/clients', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Client updated successfully')

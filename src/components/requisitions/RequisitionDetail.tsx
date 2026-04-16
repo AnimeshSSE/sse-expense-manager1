@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { authGet, authPost, authPut, authDelete } from '@/lib/fetch'
 
 interface RequisitionDetailProps {
   onBack: () => void
@@ -47,18 +48,14 @@ export function RequisitionDetail({ onBack, onEdit, onPrint }: RequisitionDetail
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['requisition', selectedRequisitionId],
-    queryFn: () => fetch(`/api/requisitions/${selectedRequisitionId}`).then(res => res.json()),
+    queryFn: () => authGet(`/api/requisitions/${selectedRequisitionId}`),
     enabled: !!selectedRequisitionId,
   })
 
   const requisition = data?.requisition
 
   const submitMutation = useMutation({
-    mutationFn: () => fetch('/api/requisitions', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: selectedRequisitionId, status: 'SUBMITTED' }),
-    }).then(res => res.json()),
+    mutationFn: () => authPut('/api/requisitions', { id: selectedRequisitionId, status: 'SUBMITTED' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisition', selectedRequisitionId] })
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
@@ -68,11 +65,7 @@ export function RequisitionDetail({ onBack, onEdit, onPrint }: RequisitionDetail
   })
 
   const approveMutation = useMutation({
-    mutationFn: () => fetch(`/api/requisitions/${selectedRequisitionId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'approve', approverId: currentUser?.id, approverRole: currentUser?.role }),
-    }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/requisitions/${selectedRequisitionId}/approve`, { action: 'approve', approverId: currentUser?.id, approverRole: currentUser?.role }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisition', selectedRequisitionId] })
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
@@ -82,11 +75,7 @@ export function RequisitionDetail({ onBack, onEdit, onPrint }: RequisitionDetail
   })
 
   const rejectMutation = useMutation({
-    mutationFn: () => fetch(`/api/requisitions/${selectedRequisitionId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reject', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
-    }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/requisitions/${selectedRequisitionId}/approve`, { action: 'reject', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisition', selectedRequisitionId] })
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
@@ -98,11 +87,7 @@ export function RequisitionDetail({ onBack, onEdit, onPrint }: RequisitionDetail
   })
 
   const sendBackMutation = useMutation({
-    mutationFn: () => fetch(`/api/requisitions/${selectedRequisitionId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'send_back', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
-    }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/requisitions/${selectedRequisitionId}/approve`, { action: 'send_back', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisition', selectedRequisitionId] })
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
@@ -114,7 +99,7 @@ export function RequisitionDetail({ onBack, onEdit, onPrint }: RequisitionDetail
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => fetch(`/api/requisitions/${selectedRequisitionId}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: () => authDelete(`/api/requisitions/${selectedRequisitionId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
       toast.success('Requisition deleted')

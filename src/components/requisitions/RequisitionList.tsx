@@ -19,6 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { authGet, authDelete } from '@/lib/fetch'
 import { GenericBulkUploadDialog } from '@/components/shared/GenericBulkUploadDialog'
 
 interface RequisitionListProps {
@@ -52,12 +53,12 @@ export function RequisitionList({ onCreateNew, onViewDetail }: RequisitionListPr
       params.set('limit', '50')
       if (currentUser?.id) params.set('userId', currentUser.id)
       if (currentUser?.role) params.set('userRole', currentUser.role)
-      return fetch(`/api/requisitions?${params}`).then(res => res.json())
+      return authGet(`/api/requisitions?${params}`)
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/requisitions/${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/requisitions/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
       toast.success('Requisition deleted successfully')

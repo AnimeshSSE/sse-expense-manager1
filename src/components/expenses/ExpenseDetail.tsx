@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { authGet, authPost, authPut, authDelete } from '@/lib/fetch'
 
 interface ExpenseDetailProps {
   onBack: () => void
@@ -59,18 +60,14 @@ export function ExpenseDetail({ onBack, onEdit, onPrint }: ExpenseDetailProps) {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['expense', selectedExpenseId],
-    queryFn: () => fetch(`/api/expenses/${selectedExpenseId}`).then(res => res.json()),
+    queryFn: () => authGet(`/api/expenses/${selectedExpenseId}`),
     enabled: !!selectedExpenseId,
   })
 
   const expense = data?.expense
 
   const submitMutation = useMutation({
-    mutationFn: () => fetch('/api/expenses', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: selectedExpenseId, status: 'SUBMITTED', userRole: currentUser?.role }),
-    }).then(res => res.json()),
+    mutationFn: () => authPut('/api/expenses', { id: selectedExpenseId, status: 'SUBMITTED', userRole: currentUser?.role }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expense', selectedExpenseId] })
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
@@ -80,11 +77,7 @@ export function ExpenseDetail({ onBack, onEdit, onPrint }: ExpenseDetailProps) {
   })
 
   const approveMutation = useMutation({
-    mutationFn: () => fetch(`/api/expenses/${selectedExpenseId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'approve', approverId: currentUser?.id, approverRole: currentUser?.role }),
-    }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/expenses/${selectedExpenseId}/approve`, { action: 'approve', approverId: currentUser?.id, approverRole: currentUser?.role }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expense', selectedExpenseId] })
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
@@ -94,11 +87,7 @@ export function ExpenseDetail({ onBack, onEdit, onPrint }: ExpenseDetailProps) {
   })
 
   const rejectMutation = useMutation({
-    mutationFn: () => fetch(`/api/expenses/${selectedExpenseId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reject', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
-    }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/expenses/${selectedExpenseId}/approve`, { action: 'reject', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expense', selectedExpenseId] })
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
@@ -110,11 +99,7 @@ export function ExpenseDetail({ onBack, onEdit, onPrint }: ExpenseDetailProps) {
   })
 
   const sendBackMutation = useMutation({
-    mutationFn: () => fetch(`/api/expenses/${selectedExpenseId}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'send_back', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
-    }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/expenses/${selectedExpenseId}/approve`, { action: 'send_back', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expense', selectedExpenseId] })
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
@@ -126,7 +111,7 @@ export function ExpenseDetail({ onBack, onEdit, onPrint }: ExpenseDetailProps) {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => fetch(`/api/expenses/${selectedExpenseId}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: () => authDelete(`/api/expenses/${selectedExpenseId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       toast.success('Expense deleted')

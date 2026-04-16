@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore, formatCurrency, type Advance } from '@/lib/store'
+import { authGet, authDelete } from '@/lib/fetch'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -40,12 +41,12 @@ export function AdvanceList({ onCreateNew, onViewDetail }: AdvanceListProps) {
       params.set('limit', '50')
       if (currentUser?.id) params.set('userId', currentUser.id)
       if (currentUser?.role) params.set('userRole', currentUser.role)
-      return fetch(`/api/advances?${params}`).then(res => res.json())
+      return authGet(`/api/advances?${params}`)
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/advances/${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/advances/${id}`).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advances'] })
       toast.success('Advance deleted successfully')

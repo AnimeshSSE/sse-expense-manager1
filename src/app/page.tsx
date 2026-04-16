@@ -25,60 +25,55 @@ import { Settings } from '@/components/settings/Settings'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Shield, ArrowRight } from 'lucide-react'
+import { Shield, LogIn, Loader2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 function LoginPage() {
   const { setCurrentUser } = useAppStore()
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => fetch('/api/users?limit=50').then(res => res.json()),
-  })
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const users = data?.users || []
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center space-y-4">
-            <div className="flex justify-center">
-              <Skeleton className="h-20 w-20 rounded-2xl" />
-            </div>
-            <Skeleton className="h-8 w-64 mx-auto" />
-            <Skeleton className="h-4 w-48 mx-auto" />
-          </div>
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-4 w-60" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[1, 2, 3, 4].map(i => (
-                <Skeleton key={i} className="h-16 w-full rounded-lg" />
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
-  }
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center space-y-4">
-            <div className="flex justify-center">
-              <img src="/sse-logo.webp" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
-            </div>
-            <h1 className="text-3xl font-bold">SSE Expense Manager</h1>
-            <p className="text-destructive">Failed to load users. Please try again.</p>
-            <Button onClick={() => window.location.reload()}>Retry</Button>
-          </div>
-        </div>
-      </div>
-    )
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Login failed')
+        return
+      }
+
+      // Store token in localStorage
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token)
+      }
+
+      setCurrentUser({
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role as UserRole,
+        department: data.user.department || '',
+        employeeId: data.user.employeeId || '',
+        status: data.user.status as 'ACTIVE' | 'INACTIVE',
+      })
+    } catch {
+      setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -86,7 +81,9 @@ function LoginPage() {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center space-y-4">
           <div className="flex justify-center">
-            <img src="/sse-logo.webp" alt="SSE" className="h-20 w-20 rounded-2xl shadow-lg" />
+            <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Shield className="h-10 w-10 text-primary" />
+            </div>
           </div>
           <div>
             <h1 className="text-3xl font-bold">SSE Expense Manager</h1>
@@ -99,52 +96,51 @@ function LoginPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-primary" />
-              Select Account
+              <LogIn className="h-5 w-5 text-primary" />
+              Sign In
             </CardTitle>
             <CardDescription>
-              Choose an account to explore the application
+              Enter your credentials to access the application
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-            {users.map((user: { id: string; name: string; role: string; department: string; email: string; employeeId: string; status: string }) => (
-              <Button
-                key={user.id}
-                variant="outline"
-                className="w-full justify-start h-auto py-3 px-4 gap-4 hover:bg-primary/5 hover:border-primary/30"
-                onClick={() => setCurrentUser({
-                  id: user.id,
-                  name: user.name,
-                  email: user.email,
-                  role: user.role as UserRole,
-                  department: user.department || '',
-                  employeeId: user.employeeId || '',
-                  status: user.status as 'ACTIVE' | 'INACTIVE',
-                })}
-              >
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                    {user.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 text-left">
-                  <p className="font-medium">{user.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {user.role.replace(/_/g, ' ')} · {user.department || 'No Department'}
-                  </p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          <CardContent>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
+
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {loading ? 'Signing in...' : 'Sign In'}
               </Button>
-            ))}
-            {users.length === 0 && (
-              <p className="text-center text-muted-foreground py-4">No users found.</p>
-            )}
+            </form>
           </CardContent>
         </Card>
-
-        <p className="text-center text-xs text-muted-foreground">
-          {users.length} account{users.length !== 1 ? 's' : ''} available
-        </p>
       </div>
     </div>
   )

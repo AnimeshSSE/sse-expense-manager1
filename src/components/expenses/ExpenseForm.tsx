@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { authGet, authPost, authPut } from '@/lib/fetch'
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9)
@@ -65,12 +66,12 @@ function ExpenseFormInner({ expenseFormMode, selectedExpenseId, currentUser, onC
 
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => fetch('/api/categories').then(res => res.json()),
+    queryFn: () => authGet('/api/categories'),
   })
 
   const { data: existingData, isLoading: isLoadingExisting } = useQuery({
     queryKey: ['expense', selectedExpenseId],
-    queryFn: () => fetch(`/api/expenses/${selectedExpenseId}`).then(res => res.json()),
+    queryFn: () => authGet(`/api/expenses/${selectedExpenseId}`),
     enabled: expenseFormMode === 'edit' && !!selectedExpenseId,
   })
 
@@ -112,11 +113,7 @@ function ExpenseFormInner({ expenseFormMode, selectedExpenseId, currentUser, onC
   }
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/expenses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/expenses', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       toast.success(isEdit ? 'Expense updated' : 'Expense created')
@@ -129,11 +126,7 @@ function ExpenseFormInner({ expenseFormMode, selectedExpenseId, currentUser, onC
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/expenses', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/expenses', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       queryClient.invalidateQueries({ queryKey: ['expense', selectedExpenseId] })

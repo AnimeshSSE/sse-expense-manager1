@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { authPost, authPut } from '@/lib/fetch'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
@@ -39,11 +40,7 @@ function SiteFormInner({ site, onClose }: SiteFormInnerProps) {
   const isEdit = !!site
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/sites', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/sites', body).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       toast.success('Site created successfully')
@@ -53,11 +50,7 @@ function SiteFormInner({ site, onClose }: SiteFormInnerProps) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => fetch('/api/sites', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/sites', body).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       toast.success('Site updated successfully')

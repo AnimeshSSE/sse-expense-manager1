@@ -45,7 +45,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
-  const { currentUser, currentPage, setCurrentPage, setCurrentUser } = useAppStore()
+  const { currentUser, currentPage, setCurrentPage, logout } = useAppStore()
 
   if (!currentUser) return null
 
@@ -65,11 +65,9 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5">
-        <img
-          src="/sse-logo.webp"
-          alt="SSE"
-          className="h-9 w-9 rounded-lg flex-shrink-0"
-        />
+        <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+          <span className="text-primary-foreground font-bold text-sm">SSE</span>
+        </div>
         {!collapsed && (
           <div className="flex flex-col">
             <span className="font-bold text-lg leading-tight text-sidebar-foreground">
@@ -139,7 +137,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
 
         {/* Logout */}
         <button
-          onClick={() => setCurrentUser(null)}
+          onClick={logout}
           className={cn(
             'w-full flex items-center gap-3 px-3 py-2 mt-2 rounded-lg text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors',
             collapsed && 'justify-center px-0'

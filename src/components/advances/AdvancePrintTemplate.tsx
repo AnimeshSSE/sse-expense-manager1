@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useAppStore, formatCurrency } from '@/lib/store'
+import { authGet } from '@/lib/fetch'
 import { format } from 'date-fns'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Separator } from '@/components/ui/separator'
@@ -11,7 +12,7 @@ export function AdvancePrintTemplate() {
 
   const { data } = useQuery({
     queryKey: ['advance', selectedAdvanceId],
-    queryFn: () => fetch(`/api/advances/${selectedAdvanceId}`).then(res => res.json()),
+    queryFn: () => authGet(`/api/advances/${selectedAdvanceId}`),
     enabled: !!selectedAdvanceId,
   })
 
@@ -37,7 +38,7 @@ function AdvancePrintContent({ advance }: { advance: Record<string, unknown> }) 
     <div className="bg-white text-black p-8 max-w-[210mm] mx-auto min-h-[297mm]">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
-          <img src="/sse-logo.webp" alt="SSE" className="h-14 w-14" />
+          <div className="h-14 w-14 rounded-lg bg-primary flex items-center justify-center"><span className="text-primary-foreground font-bold text-lg">SSE</span></div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">SSE Cash Advance Request</h1>
             <p className="text-sm text-gray-500">Company Confidential</p>

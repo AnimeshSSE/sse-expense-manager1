@@ -8,12 +8,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { UserCircle, Mail, Shield, Building, Hash, Save } from 'lucide-react'
+import { UserCircle, Mail, Shield, Building, Hash } from 'lucide-react'
 
 const roleLabels: Record<string, string> = {
   ADMIN: 'Administrator',
+  MANAGER: 'Manager',
   STOCK_MANAGER: 'Stock Manager',
-  DEPARTMENT_HEAD: 'Department Head',
   EMPLOYEE: 'Employee',
 }
 

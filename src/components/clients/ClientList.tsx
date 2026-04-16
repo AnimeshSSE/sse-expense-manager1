@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
+import { authGet, authDelete } from '@/lib/fetch'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { GenericBulkUploadDialog } from '@/components/shared/GenericBulkUploadDialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -25,12 +26,12 @@ export function ClientList() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['clients'],
-    queryFn: () => fetch('/api/clients?limit=100').then(res => res.json()),
+    queryFn: () => authGet('/api/clients?limit=100'),
     enabled: isAdmin,
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/clients?id=${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/clients?id=${id}`).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Client deleted successfully')

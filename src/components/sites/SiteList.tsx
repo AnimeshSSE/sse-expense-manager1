@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
+import { authGet, authDelete } from '@/lib/fetch'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { GenericBulkUploadDialog } from '@/components/shared/GenericBulkUploadDialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -25,12 +26,12 @@ export function SiteList() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['sites'],
-    queryFn: () => fetch('/api/sites?limit=100').then(res => res.json()),
+    queryFn: () => authGet('/api/sites?limit=100'),
     enabled: isAdmin,
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/sites?id=${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/sites?id=${id}`).then(res => res.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       toast.success('Site deleted successfully')

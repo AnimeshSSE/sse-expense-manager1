@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Upload, Edit, Trash2 } from 'lucide-react'
 import { CategoryForm, type CategoryData } from './CategoryForm'
 import { toast } from 'sonner'
+import { authGet, authDelete } from '@/lib/fetch'
 
 export function CategoryList() {
   const { currentUser } = useAppStore()
@@ -24,12 +25,12 @@ export function CategoryList() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => fetch('/api/categories?limit=100').then(res => res.json()),
+    queryFn: () => authGet('/api/categories?limit=100'),
     enabled: isAdmin,
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/categories?id=${id}`, { method: 'DELETE' }).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/categories?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] })
       toast.success('Category deleted successfully')
@@ -59,7 +60,7 @@ export function CategoryList() {
       key: 'itemsCount',
       header: 'Items Count',
       render: (item) => (
-        <span className="text-sm">{item._count?.expenses || 0}</span>
+        <span className="text-sm">{item._count?.expenseItems || 0}</span>
       ),
     },
   ]

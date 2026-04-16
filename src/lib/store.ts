@@ -112,6 +112,7 @@ interface AppState {
   // Auth
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
+  logout: () => void
 
   // Navigation
   currentPage: PageType
@@ -144,6 +145,12 @@ export const useAppStore = create<AppState>((set) => ({
   // Auth
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
+  logout: () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token')
+    }
+    set({ currentUser: null })
+  },
 
   // Navigation
   currentPage: 'dashboard',

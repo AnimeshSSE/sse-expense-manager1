@@ -33,7 +33,7 @@ export function UserList() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ users: User[]; total: number; totalPages: number }>({
     queryKey: ['users', roleFilter],
     queryFn: () => {
       const params = new URLSearchParams()

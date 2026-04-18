@@ -43,7 +43,7 @@ export function RequisitionList({ onCreateNew, onViewDetail }: RequisitionListPr
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ requisitions: Requisition[]; total: number; totalPages: number }>({
     queryKey: ['requisitions', statusFilter, sortBy, sortDir, currentUser?.id],
     queryFn: () => {
       const params = new URLSearchParams()

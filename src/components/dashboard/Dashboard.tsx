@@ -32,9 +32,19 @@ import { format } from 'date-fns'
 
 const PIE_COLORS = ['#059669', '#0891b2', '#ca8a04', '#dc2626', '#7c3aed', '#db2777', '#ea580c', '#4f46e5']
 
+interface DashboardData {
+  summary: { totalExpenseAmount: number; totalRequisitionAmount: number; totalAdvanceAmount: number }
+  expenseByStatus: { status: string; _sum: { totalAmount: number | null }; _count: number }[]
+  requisitionByStatus: { status: string; _sum: { totalAmount: number | null }; _count: number }[]
+  advanceByStatus: { status: string; _sum: { amount: number | null }; _count: number }[]
+  monthlyExpenseTrend: { month: string; total: number; count: number }[]
+  departmentBreakdown: { department: string | null; userCount: number; totalExpenseAmount: number; expenseCount: number }[]
+  recentActivity: { id: string; type: 'EXPENSE' | 'REQUISITION' | 'ADVANCE'; title: string; status: string; amount: number; updatedAt: string; userName: string }[]
+}
+
 export function Dashboard() {
   const { currentUser, setCurrentPage } = useAppStore()
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: () => authGet('/api/dashboard'),
   })

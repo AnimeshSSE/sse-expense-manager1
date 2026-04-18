@@ -31,7 +31,7 @@ export function AdvanceList({ onCreateNew, onViewDetail }: AdvanceListProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ advances: Advance[]; total: number; totalPages: number }>({
     queryKey: ['advances', statusFilter, sortBy, sortDir, currentUser?.id],
     queryFn: () => {
       const params = new URLSearchParams()
@@ -46,7 +46,7 @@ export function AdvanceList({ onCreateNew, onViewDetail }: AdvanceListProps) {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => authDelete(`/api/advances/${id}`).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/advances/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advances'] })
       toast.success('Advance deleted successfully')

@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { authGet } from '@/lib/fetch'
-import { useAppStore, formatCurrency } from '@/lib/store'
+import { useAppStore, formatCurrency, type Expense } from '@/lib/store'
 import { format } from 'date-fns'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,7 +19,7 @@ import { Separator } from '@/components/ui/separator'
 export function ExpensePrintTemplate() {
   const { selectedExpenseId, isPrintMode } = useAppStore()
 
-  const { data } = useQuery({
+  const { data } = useQuery<{ expense: Expense }>({
     queryKey: ['expense', selectedExpenseId],
     queryFn: () => authGet(`/api/expenses/${selectedExpenseId}`),
     enabled: !!selectedExpenseId,

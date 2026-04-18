@@ -24,14 +24,14 @@ export function SiteList() {
 
   const isAdmin = currentUser?.role === 'ADMIN'
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ sites: SiteData[]; total: number }>({
     queryKey: ['sites'],
     queryFn: () => authGet('/api/sites?limit=100'),
     enabled: isAdmin,
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => authDelete(`/api/sites?id=${id}`).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/sites?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       toast.success('Site deleted successfully')

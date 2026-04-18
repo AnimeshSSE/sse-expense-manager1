@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAppStore, formatCurrency } from '@/lib/store'
+import { useAppStore, formatCurrency, type Requisition } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -46,7 +46,7 @@ export function RequisitionDetail({ onBack, onEdit, onPrint }: RequisitionDetail
   const [rejectReason, setRejectReason] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ requisition: Requisition }>({
     queryKey: ['requisition', selectedRequisitionId],
     queryFn: () => authGet(`/api/requisitions/${selectedRequisitionId}`),
     enabled: !!selectedRequisitionId,

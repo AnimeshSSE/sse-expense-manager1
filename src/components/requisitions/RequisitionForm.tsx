@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAppStore, formatCurrency, departments } from '@/lib/store'
+import { useAppStore, formatCurrency, departments, type Requisition } from '@/lib/store'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
@@ -59,7 +59,7 @@ function RequisitionFormInner({ requisitionFormMode, selectedRequisitionId, curr
   const [deliveryDate, setDeliveryDate] = useState('')
   const [items, setItems] = useState<RequisitionFormItem[]>(INITIAL_ITEMS)
 
-  const { data: existingData, isLoading: isLoadingExisting } = useQuery({
+  const { data: existingData, isLoading: isLoadingExisting } = useQuery<{ requisition: Requisition }>({
     queryKey: ['requisition', selectedRequisitionId],
     queryFn: () => authGet(`/api/requisitions/${selectedRequisitionId}`),
     enabled: requisitionFormMode === 'edit' && !!selectedRequisitionId,
@@ -102,17 +102,17 @@ function RequisitionFormInner({ requisitionFormMode, selectedRequisitionId, curr
   }
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => authPost('/api/requisitions', body),
+    mutationFn: (body: object) => authPost<{ requisition: Requisition }>('/api/requisitions', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
       toast.success('Requisition created')
-      onSubmit(data.requisition?.id || data.id)
+      onSubmit(data?.requisition?.id ?? '')
     },
     onError: () => toast.error('Failed to create requisition'),
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => authPut('/api/requisitions', body),
+    mutationFn: (body: object) => authPut<{ requisition: Requisition }>('/api/requisitions', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requisitions'] })
       queryClient.invalidateQueries({ queryKey: ['requisition', selectedRequisitionId] })

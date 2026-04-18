@@ -1,6 +1,7 @@
 /**
  * Authenticated fetch wrapper.
- * Automatically attaches the auth token from localStorage to all API requests.
+ * authFetch returns parsed JSON directly.
+ * authFetchRaw returns the raw Response (for blob/file downloads).
  */
 
 export function getToken(): string | null {
@@ -8,7 +9,7 @@ export function getToken(): string | null {
   return localStorage.getItem('auth_token')
 }
 
-export function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function authFetch<T = unknown>(url: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers = new Headers(options.headers || {})
 
@@ -20,25 +21,50 @@ export function authFetch(url: string, options: RequestInit = {}): Promise<Respo
     headers.set('Content-Type', 'application/json')
   }
 
-  return fetch(url, { ...options, headers })
+  const res = await fetch(url, { ...options, headers })
+
+  if (!res.ok) {
+    let errMsg = `Request failed: ${res.status} ${res.statusText}`
+    try {
+      const errBody = await res.json()
+      if (errBody?.error) errMsg = errBody.error
+    } catch {
+      // ignore parse error
+    }
+    throw new Error(errMsg)
+  }
+
+  return res.json() as Promise<T>
 }
 
 /**
- * Convenience wrappers
+ * Raw fetch — returns Response object (use for blob/file downloads).
  */
-export const authGet = (url: string) => authFetch(url, { method: 'GET' })
+export async function authFetchRaw(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getToken()
+  const headers = new Headers(options.headers || {})
 
-export const authPost = (url: string, body: unknown) =>
-  authFetch(url, {
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  return fetch(url, { ...options, headers })
+}
+
+export const authGet = <T = unknown>(url: string) =>
+  authFetch<T>(url, { method: 'GET' })
+
+export const authPost = <T = unknown>(url: string, body: unknown) =>
+  authFetch<T>(url, {
     method: 'POST',
     body: JSON.stringify(body),
   })
 
-export const authPut = (url: string, body: unknown) =>
-  authFetch(url, {
+export const authPut = <T = unknown>(url: string, body: unknown) =>
+  authFetch<T>(url, {
     method: 'PUT',
     body: JSON.stringify(body),
   })
 
-export const authDelete = (url: string) =>
-  authFetch(url, { method: 'DELETE' })
+export const authDelete = <T = unknown>(url: string) =>
+  authFetch<T>(url, { method: 'DELETE' })

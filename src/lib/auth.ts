@@ -11,7 +11,7 @@ export function getSession(request: NextRequest): SessionPayload | null {
 
   if (!userId || !role) return null;
 
-  return { userId, role };
+  return { userId, role, exp: 0 };
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAppStore, formatCurrency, departments } from '@/lib/store'
+import { useAppStore, formatCurrency, departments, type Advance } from '@/lib/store'
 import { authGet, authPost, authPut } from '@/lib/fetch'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -35,7 +35,7 @@ function AdvanceFormInner({ advanceFormMode, selectedAdvanceId, currentUser, onC
   const [purpose, setPurpose] = useState('')
   const [expectedReturnDate, setExpectedReturnDate] = useState('')
 
-  const { data: existingData, isLoading: isLoadingExisting } = useQuery({
+  const { data: existingData, isLoading: isLoadingExisting } = useQuery<{ advance: Advance }>({
     queryKey: ['advance', selectedAdvanceId],
     queryFn: () => authGet(`/api/advances/${selectedAdvanceId}`),
     enabled: advanceFormMode === 'edit' && !!selectedAdvanceId,
@@ -59,17 +59,17 @@ function AdvanceFormInner({ advanceFormMode, selectedAdvanceId, currentUser, onC
   const isEdit = advanceFormMode === 'edit'
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => authPost('/api/advances', body).then(res => res.json()),
+    mutationFn: (body: object) => authPost<{ advance: Advance }>('/api/advances', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['advances'] })
       toast.success('Advance created')
-      onSubmit(data.advance?.id || data.id)
+      onSubmit(data?.advance?.id ?? '')
     },
     onError: () => toast.error('Failed to create advance'),
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => authPut('/api/advances', body).then(res => res.json()),
+    mutationFn: (body: object) => authPut<{ advance: Advance }>('/api/advances', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advances'] })
       queryClient.invalidateQueries({ queryKey: ['advance', selectedAdvanceId] })

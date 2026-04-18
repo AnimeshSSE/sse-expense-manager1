@@ -23,7 +23,7 @@ export function CategoryList() {
 
   const isAdmin = currentUser?.role === 'ADMIN'
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ categories: CategoryData[]; total: number }>({
     queryKey: ['categories'],
     queryFn: () => authGet('/api/categories?limit=100'),
     enabled: isAdmin,

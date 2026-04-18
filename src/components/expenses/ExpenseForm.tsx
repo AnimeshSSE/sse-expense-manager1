@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAppStore, formatCurrency, departments } from '@/lib/store'
+import { useAppStore, formatCurrency, departments, type Expense } from '@/lib/store'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,12 @@ import { authGet, authPost, authPut } from '@/lib/fetch'
 
 function generateId() {
   return Math.random().toString(36).substring(2, 9)
+}
+
+interface ExpenseCategory {
+  id: string
+  name: string
+  code: string
 }
 
 interface FormItem {
@@ -64,12 +70,12 @@ function ExpenseFormInner({ expenseFormMode, selectedExpenseId, currentUser, onC
   const [department, setDepartment] = useState(currentUser?.department || '')
   const [items, setItems] = useState<FormItem[]>(INITIAL_ITEMS)
 
-  const { data: categoriesData } = useQuery({
+  const { data: categoriesData } = useQuery<{ categories: ExpenseCategory[] }>({
     queryKey: ['categories'],
     queryFn: () => authGet('/api/categories'),
   })
 
-  const { data: existingData, isLoading: isLoadingExisting } = useQuery({
+  const { data: existingData, isLoading: isLoadingExisting } = useQuery<{ expense: Expense }>({
     queryKey: ['expense', selectedExpenseId],
     queryFn: () => authGet(`/api/expenses/${selectedExpenseId}`),
     enabled: expenseFormMode === 'edit' && !!selectedExpenseId,
@@ -113,11 +119,11 @@ function ExpenseFormInner({ expenseFormMode, selectedExpenseId, currentUser, onC
   }
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => authPost('/api/expenses', body),
+    mutationFn: (body: object) => authPost<{ expense: Expense }>('/api/expenses', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       toast.success(isEdit ? 'Expense updated' : 'Expense created')
-      onSubmit(data.expense?.id || data.id)
+      onSubmit(data?.expense?.id ?? '')
     },
     onError: (err) => {
       const msg = err instanceof Error ? err.message : 'Failed to save expense'
@@ -126,12 +132,12 @@ function ExpenseFormInner({ expenseFormMode, selectedExpenseId, currentUser, onC
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => authPut('/api/expenses', body),
+    mutationFn: (body: object) => authPut<{ expense: Expense }>('/api/expenses', body),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] })
       queryClient.invalidateQueries({ queryKey: ['expense', selectedExpenseId] })
       toast.success('Expense updated')
-      onSubmit(selectedExpenseId || data.expense?.id)
+      onSubmit(selectedExpenseId ?? data?.expense?.id ?? '')
     },
     onError: () => toast.error('Failed to update expense'),
   })

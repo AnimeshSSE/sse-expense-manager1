@@ -40,7 +40,7 @@ function SiteFormInner({ site, onClose }: SiteFormInnerProps) {
   const isEdit = !!site
 
   const createMutation = useMutation({
-    mutationFn: (body: object) => authPost('/api/sites', body).then(res => res.json()),
+    mutationFn: (body: object) => authPost('/api/sites', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       toast.success('Site created successfully')
@@ -50,7 +50,7 @@ function SiteFormInner({ site, onClose }: SiteFormInnerProps) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (body: object) => authPut('/api/sites', body).then(res => res.json()),
+    mutationFn: (body: object) => authPut('/api/sites', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
       toast.success('Site updated successfully')

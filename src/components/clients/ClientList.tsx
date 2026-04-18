@@ -24,14 +24,14 @@ export function ClientList() {
 
   const isAdmin = currentUser?.role === 'ADMIN'
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ clients: ClientData[]; total: number }>({
     queryKey: ['clients'],
     queryFn: () => authGet('/api/clients?limit=100'),
     enabled: isAdmin,
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => authDelete(`/api/clients?id=${id}`).then(res => res.json()),
+    mutationFn: (id: string) => authDelete(`/api/clients?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       toast.success('Client deleted successfully')

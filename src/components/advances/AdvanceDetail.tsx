@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAppStore, formatCurrency } from '@/lib/store'
+import { useAppStore, formatCurrency, type Advance } from '@/lib/store'
 import { authGet, authPut, authPost } from '@/lib/fetch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -34,7 +34,7 @@ export function AdvanceDetail({ onBack, onEdit, onPrint }: AdvanceDetailProps) {
   const [sendBackDialogOpen, setSendBackDialogOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ advance: Advance }>({
     queryKey: ['advance', selectedAdvanceId],
     queryFn: () => authGet(`/api/advances/${selectedAdvanceId}`),
     enabled: !!selectedAdvanceId,
@@ -43,7 +43,7 @@ export function AdvanceDetail({ onBack, onEdit, onPrint }: AdvanceDetailProps) {
   const advance = data?.advance
 
   const submitMutation = useMutation({
-    mutationFn: () => authPut('/api/advances', { id: selectedAdvanceId, status: 'SUBMITTED' }).then(res => res.json()),
+    mutationFn: () => authPut('/api/advances', { id: selectedAdvanceId, status: 'SUBMITTED' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advance', selectedAdvanceId] })
       queryClient.invalidateQueries({ queryKey: ['advances'] })
@@ -53,7 +53,7 @@ export function AdvanceDetail({ onBack, onEdit, onPrint }: AdvanceDetailProps) {
   })
 
   const approveMutation = useMutation({
-    mutationFn: () => authPost(`/api/advances/${selectedAdvanceId}/approve`, { action: 'approve', approverId: currentUser?.id, approverRole: currentUser?.role }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/advances/${selectedAdvanceId}/approve`, { action: 'approve', approverId: currentUser?.id, approverRole: currentUser?.role }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advance', selectedAdvanceId] })
       queryClient.invalidateQueries({ queryKey: ['advances'] })
@@ -63,7 +63,7 @@ export function AdvanceDetail({ onBack, onEdit, onPrint }: AdvanceDetailProps) {
   })
 
   const rejectMutation = useMutation({
-    mutationFn: () => authPost(`/api/advances/${selectedAdvanceId}/approve`, { action: 'reject', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/advances/${selectedAdvanceId}/approve`, { action: 'reject', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advance', selectedAdvanceId] })
       queryClient.invalidateQueries({ queryKey: ['advances'] })
@@ -75,7 +75,7 @@ export function AdvanceDetail({ onBack, onEdit, onPrint }: AdvanceDetailProps) {
   })
 
   const sendBackMutation = useMutation({
-    mutationFn: () => authPost(`/api/advances/${selectedAdvanceId}/approve`, { action: 'send_back', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }).then(res => res.json()),
+    mutationFn: () => authPost(`/api/advances/${selectedAdvanceId}/approve`, { action: 'send_back', approverId: currentUser?.id, approverRole: currentUser?.role, reason: rejectReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['advance', selectedAdvanceId] })
       queryClient.invalidateQueries({ queryKey: ['advances'] })

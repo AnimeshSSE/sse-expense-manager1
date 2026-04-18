@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { useAppStore, formatCurrency } from '@/lib/store'
+import { useAppStore, formatCurrency, type Requisition } from '@/lib/store'
 import { authGet } from '@/lib/fetch'
 import { format } from 'date-fns'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -21,7 +21,7 @@ const urgencyConfig: Record<string, { label: string; className: string }> = {
 export function RequisitionPrintTemplate() {
   const { selectedRequisitionId, isPrintMode } = useAppStore()
 
-  const { data } = useQuery({
+  const { data } = useQuery<{ requisition: Requisition }>({
     queryKey: ['requisition', selectedRequisitionId],
     queryFn: () => authGet(`/api/requisitions/${selectedRequisitionId}`),
     enabled: !!selectedRequisitionId,

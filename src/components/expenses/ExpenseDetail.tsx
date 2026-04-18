@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAppStore, formatCurrency } from '@/lib/store'
+import { useAppStore, formatCurrency, type Expense } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -58,7 +58,7 @@ export function ExpenseDetail({ onBack, onEdit, onPrint }: ExpenseDetailProps) {
   const [rejectReason, setRejectReason] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ expense: Expense }>({
     queryKey: ['expense', selectedExpenseId],
     queryFn: () => authGet(`/api/expenses/${selectedExpenseId}`),
     enabled: !!selectedExpenseId,

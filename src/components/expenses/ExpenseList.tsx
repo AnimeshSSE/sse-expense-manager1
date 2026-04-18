@@ -35,7 +35,7 @@ export function ExpenseList({ onCreateNew, onViewDetail }: ExpenseListProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<{ expenses: Expense[]; total: number; totalPages: number }>({
     queryKey: ['expenses', statusFilter, sortBy, sortDir, currentUser?.id],
     queryFn: () => {
       const params = new URLSearchParams()

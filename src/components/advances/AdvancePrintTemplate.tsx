@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { useAppStore, formatCurrency } from '@/lib/store'
+import { useAppStore, formatCurrency, type Advance } from '@/lib/store'
 import { authGet } from '@/lib/fetch'
 import { format } from 'date-fns'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 export function AdvancePrintTemplate() {
   const { selectedAdvanceId, isPrintMode } = useAppStore()
 
-  const { data } = useQuery({
+  const { data } = useQuery<{ advance: Advance }>({
     queryKey: ['advance', selectedAdvanceId],
     queryFn: () => authGet(`/api/advances/${selectedAdvanceId}`),
     enabled: !!selectedAdvanceId,

@@ -20,9 +20,9 @@ export async function middleware(request: NextRequest) {
       );
     }
 
-    // Verify token signature and expiry
+    // Verify token signature and expiry (edge-compatible)
     const token = authHeader.replace("Bearer ", "");
-    const session = await verifyToken(token);
+    const session = await verifyTokenEdge(token);
     if (!session) {
       return NextResponse.json(
         { error: "Unauthorized: Invalid or expired token" },

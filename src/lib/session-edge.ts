@@ -3,17 +3,25 @@
  * Uses Web Crypto API only (no node:crypto).
  */
 
-const TOKEN_EXPIRY = 24 * 60 * 60 * 1000 // 24 hours
-
 function getSecret(): string {
-  const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'fallback-secret-change-me'
-  return secret
+  return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'fallback-secret-change-me'
 }
 
 export interface SessionPayload {
   userId: string
   role: string
   exp: number
+}
+
+/**
+ * Convert base64url string to standard base64 with padding.
+ */
+function base64urlToBase64(base64url: string): string {
+  let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
+  const pad = base64.length % 4
+  if (pad === 2) base64 += '=='
+  else if (pad === 3) base64 += '='
+  return base64
 }
 
 export async function verifyTokenEdge(token: string): Promise<SessionPayload | null> {
@@ -25,7 +33,7 @@ export async function verifyTokenEdge(token: string): Promise<SessionPayload | n
     const secret = getSecret()
 
     const sigBytes = Uint8Array.from(
-      atob(signature.replace(/-/g, '+').replace(/_/g, '/')),
+      atob(base64urlToBase64(signature)),
       c => c.charCodeAt(0)
     )
     const keyBytes = new TextEncoder().encode(secret)
@@ -42,7 +50,7 @@ export async function verifyTokenEdge(token: string): Promise<SessionPayload | n
     const valid = await crypto.subtle.verify('HMAC', cryptoKey, sigBytes, payloadBuffer)
     if (!valid) return null
 
-    const payloadStr = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'))
+    const payloadStr = atob(base64urlToBase64(payloadB64))
     const payload: SessionPayload = JSON.parse(payloadStr)
 
     if (payload.exp < Date.now()) return null

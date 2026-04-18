@@ -1,312 +1,157 @@
 'use client'
+// S.S. Electricals Expense Manager - v1.2 (Lazy-loaded pages for memory efficiency)
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
-import { useAppStore, type UserRole } from '@/lib/store'
-import { AppLayout } from '@/components/layout/AppLayout'
-import { Dashboard } from '@/components/dashboard/Dashboard'
-import { ExpenseList } from '@/components/expenses/ExpenseList'
-import { ExpenseForm } from '@/components/expenses/ExpenseForm'
-import { ExpenseDetail } from '@/components/expenses/ExpenseDetail'
-import { ExpensePrintTemplate } from '@/components/expenses/ExpensePrintTemplate'
-import { RequisitionList } from '@/components/requisitions/RequisitionList'
-import { RequisitionForm } from '@/components/requisitions/RequisitionForm'
-import { RequisitionDetail } from '@/components/requisitions/RequisitionDetail'
-import { RequisitionPrintTemplate } from '@/components/requisitions/RequisitionPrintTemplate'
-import { AdvanceList } from '@/components/advances/AdvanceList'
-import { AdvanceForm } from '@/components/advances/AdvanceForm'
-import { AdvanceDetail } from '@/components/advances/AdvanceDetail'
-import { AdvancePrintTemplate } from '@/components/advances/AdvancePrintTemplate'
-import { SiteList } from '@/components/sites/SiteList'
-import { ClientList } from '@/components/clients/ClientList'
-import { CategoryList } from '@/components/categories/CategoryList'
-import { UserList } from '@/components/users/UserList'
-import { Settings } from '@/components/settings/Settings'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Shield, LogIn, Loader2 } from 'lucide-react'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { useState, lazy, Suspense } from 'react'
+import { AuthProvider, useAuth } from '@/hooks/use-auth'
+import { LoginPage } from '@/components/expense-manager/login-page'
+import { Layout, type TabId } from '@/components/expense-manager/layout'
+import { Skeleton } from '@/components/ui/skeleton'
 
-function LoginPage() {
-  const { setCurrentUser } = useAppStore()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+// Lazy-load all page components to reduce initial compilation memory
+const DashboardPage = lazy(() => import('@/components/expense-manager/dashboard-page').then(m => ({ default: m.DashboardPage })))
+const ExpensesPage = lazy(() => import('@/components/expense-manager/expenses-page').then(m => ({ default: m.ExpensesPage })))
+const AdvancesPage = lazy(() => import('@/components/expense-manager/advances-page').then(m => ({ default: m.AdvancesPage })))
+const RequisitionsPage = lazy(() => import('@/components/expense-manager/requisitions-page').then(m => ({ default: m.RequisitionsPage })))
+const BoqPage = lazy(() => import('@/components/expense-manager/boq-page').then(m => ({ default: m.BoqPage })))
+const ReportsPage = lazy(() => import('@/components/expense-manager/reports-page').then(m => ({ default: m.ReportsPage })))
+const ClientsPage = lazy(() => import('@/components/expense-manager/clients-page').then(m => ({ default: m.ClientsPage })))
+const SitesPage = lazy(() => import('@/components/expense-manager/sites-page').then(m => ({ default: m.SitesPage })))
+const CategoriesPage = lazy(() => import('@/components/expense-manager/categories-page').then(m => ({ default: m.CategoriesPage })))
+const UsersPage = lazy(() => import('@/components/expense-manager/users-page').then(m => ({ default: m.UsersPage })))
+const AuditLogsPage = lazy(() => import('@/components/expense-manager/audit-logs-page').then(m => ({ default: m.AuditLogsPage })))
+const EmployeesPage = lazy(() => import('@/components/expense-manager/employees-page').then(m => ({ default: m.EmployeesPage })))
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
-    try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || 'Login failed')
-        return
-      }
-
-      // Store token in localStorage
-      if (data.token) {
-        localStorage.setItem('auth_token', data.token)
-      }
-
-      setCurrentUser({
-        id: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        role: data.user.role as UserRole,
-        department: data.user.department || '',
-        employeeId: data.user.employeeId || '',
-        status: data.user.status as 'ACTIVE' | 'INACTIVE',
-      })
-    } catch {
-      setError('Network error. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+function PageLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center space-y-4">
-          <div className="flex justify-center">
-            <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Shield className="h-10 w-10 text-primary" />
-            </div>
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold">SSE Expense Manager</h1>
-            <p className="text-muted-foreground mt-1">
-              Streamlined expense management for your organization
-            </p>
-          </div>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LogIn className="h-5 w-5 text-primary" />
-              Sign In
-            </CardTitle>
-            <CardDescription>
-              Enter your credentials to access the application
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
-
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {loading ? 'Signing in...' : 'Sign In'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  )
-}
-
-function PrintView() {
-  const { currentPage } = useAppStore()
-
-  return (
-    <div className="min-h-screen bg-white p-4">
-      {currentPage === 'expenses' && <ExpensePrintTemplate />}
-      {currentPage === 'requisitions' && <RequisitionPrintTemplate />}
-      {currentPage === 'advances' && <AdvancePrintTemplate />}
-      <div className="no-print mt-4 text-center">
-        <Button
-          variant="outline"
-          onClick={() => {
-            useAppStore.getState().setIsPrintMode(false)
-            window.close()
-          }}
-        >
-          Back to App
-        </Button>
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="text-center space-y-3">
+        <Skeleton className="w-12 h-12 rounded-xl mx-auto" />
+        <Skeleton className="w-36 h-5 mx-auto" />
+        <Skeleton className="w-24 h-4 mx-auto" />
+        <p className="text-sm text-muted-foreground mt-2">Loading...</p>
       </div>
     </div>
   )
 }
 
 function AppContent() {
-  const { currentPage, isPrintMode, expenseFormMode, selectedExpenseId, requisitionFormMode, selectedRequisitionId, advanceFormMode, selectedAdvanceId } = useAppStore()
+  const { isAuthenticated, isLoading, permissions } = useAuth()
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard')
 
-  if (isPrintMode) {
-    return <PrintView />
+  const handleTabChange = (tab: TabId) => {
+    setActiveTab(tab)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-stone-50 to-stone-100">
+        <div className="text-center space-y-4">
+          <Skeleton className="w-16 h-16 rounded-2xl mx-auto" />
+          <Skeleton className="w-48 h-6 mx-auto" />
+          <Skeleton className="w-32 h-4 mx-auto" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />
+  }
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <DashboardPage onNavigate={handleTabChange} />
+          </Suspense>
+        )
+      case 'expenses':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <ExpensesPage />
+          </Suspense>
+        )
+      case 'advances':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <AdvancesPage />
+          </Suspense>
+        )
+      case 'requisitions':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <RequisitionsPage />
+          </Suspense>
+        )
+      case 'boq':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <BoqPage />
+          </Suspense>
+        )
+      case 'reports':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <ReportsPage />
+          </Suspense>
+        )
+      case 'clients':
+        return permissions.canManageClients ? (
+          <Suspense fallback={<PageLoader />}>
+            <ClientsPage />
+          </Suspense>
+        ) : null
+      case 'sites':
+        return permissions.canManageSites ? (
+          <Suspense fallback={<PageLoader />}>
+            <SitesPage />
+          </Suspense>
+        ) : null
+      case 'categories':
+        return permissions.canManageCategories ? (
+          <Suspense fallback={<PageLoader />}>
+            <CategoriesPage />
+          </Suspense>
+        ) : null
+      case 'users':
+        return permissions.canManageUsers ? (
+          <Suspense fallback={<PageLoader />}>
+            <UsersPage />
+          </Suspense>
+        ) : null
+      case 'audit-logs':
+        return permissions.canViewAuditLogs ? (
+          <Suspense fallback={<PageLoader />}>
+            <AuditLogsPage />
+          </Suspense>
+        ) : null
+      case 'employees':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <EmployeesPage />
+          </Suspense>
+        )
+      default:
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <DashboardPage onNavigate={handleTabChange} />
+          </Suspense>
+        )
+    }
   }
 
   return (
-    <AppLayout>
-      {/* Print templates (hidden, only shown during print) */}
-      {currentPage === 'expenses' && <ExpensePrintTemplate />}
-      {currentPage === 'requisitions' && <RequisitionPrintTemplate />}
-      {currentPage === 'advances' && <AdvancePrintTemplate />}
-
-      {currentPage === 'dashboard' && <Dashboard />}
-
-      {currentPage === 'expenses' && (
-        <>
-          <ExpenseList
-            onCreateNew={() => {
-              useAppStore.getState().setExpenseFormMode('create')
-              useAppStore.getState().setSelectedExpenseId(null)
-            }}
-            onViewDetail={(id) => {
-              useAppStore.getState().setSelectedExpenseId(id)
-              useAppStore.getState().setExpenseFormMode('view')
-            }}
-          />
-          <ExpenseForm />
-          {(expenseFormMode === 'view' || expenseFormMode === 'edit') && selectedExpenseId && (
-            <ExpenseDetail
-              onBack={() => {
-                useAppStore.getState().setSelectedExpenseId(null)
-                useAppStore.getState().setExpenseFormMode('create')
-              }}
-              onEdit={() => {
-                useAppStore.getState().setExpenseFormMode('edit')
-              }}
-              onPrint={() => {
-                useAppStore.getState().setIsPrintMode(true)
-                setTimeout(() => window.print(), 100)
-              }}
-            />
-          )}
-        </>
-      )}
-
-      {currentPage === 'requisitions' && (
-        <>
-          <RequisitionList
-            onCreateNew={() => {
-              useAppStore.getState().setRequisitionFormMode('create')
-              useAppStore.getState().setSelectedRequisitionId(null)
-            }}
-            onViewDetail={(id) => {
-              useAppStore.getState().setSelectedRequisitionId(id)
-              useAppStore.getState().setRequisitionFormMode('view')
-            }}
-          />
-          <RequisitionForm />
-          {(requisitionFormMode === 'view' || requisitionFormMode === 'edit') && selectedRequisitionId && (
-            <RequisitionDetail
-              onBack={() => {
-                useAppStore.getState().setSelectedRequisitionId(null)
-                useAppStore.getState().setRequisitionFormMode('create')
-              }}
-              onEdit={() => {
-                useAppStore.getState().setRequisitionFormMode('edit')
-              }}
-              onPrint={() => {
-                useAppStore.getState().setIsPrintMode(true)
-                setTimeout(() => window.print(), 100)
-              }}
-            />
-          )}
-        </>
-      )}
-
-      {currentPage === 'advances' && (
-        <>
-          <AdvanceList
-            onCreateNew={() => {
-              useAppStore.getState().setAdvanceFormMode('create')
-              useAppStore.getState().setSelectedAdvanceId(null)
-            }}
-            onViewDetail={(id) => {
-              useAppStore.getState().setSelectedAdvanceId(id)
-              useAppStore.getState().setAdvanceFormMode('view')
-            }}
-          />
-          <AdvanceForm />
-          {(advanceFormMode === 'view' || advanceFormMode === 'edit') && selectedAdvanceId && (
-            <AdvanceDetail
-              onBack={() => {
-                useAppStore.getState().setSelectedAdvanceId(null)
-                useAppStore.getState().setAdvanceFormMode('create')
-              }}
-              onEdit={() => {
-                useAppStore.getState().setAdvanceFormMode('edit')
-              }}
-              onPrint={() => {
-                useAppStore.getState().setIsPrintMode(true)
-                setTimeout(() => window.print(), 100)
-              }}
-            />
-          )}
-        </>
-      )}
-
-      {currentPage === 'sites' && <SiteList />}
-      {currentPage === 'clients' && <ClientList />}
-      {currentPage === 'categories' && <CategoryList />}
-      {currentPage === 'users' && <UserList />}
-      {currentPage === 'settings' && <Settings />}
-    </AppLayout>
+    <Layout activeTab={activeTab} onTabChange={handleTabChange}>
+      {renderTab()}
+    </Layout>
   )
 }
 
 export default function Home() {
-  const { currentUser } = useAppStore()
-  const [queryClient] = useState(() => new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime: 60 * 1000,
-      },
-    },
-  }))
-
-  if (!currentUser) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <LoginPage />
-      </QueryClientProvider>
-    )
-  }
-
   return (
-    <QueryClientProvider client={queryClient}>
+    <AuthProvider>
       <AppContent />
-    </QueryClientProvider>
+    </AuthProvider>
   )
 }

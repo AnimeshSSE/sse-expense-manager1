@@ -1,20 +1,19 @@
 # dependencies
-node_modules/
-.pnp
-.pnp.js
+node_modules
+/.pnp
+.pnp.*
 
 # next.js
-.next/
-out/
+/.next/
+/out/
 
 # production
-build/
-dist/
+/build
+/dist
 
 # misc
 .DS_Store
 *.pem
-*.log
 
 # debug
 npm-debug.log*
@@ -24,6 +23,7 @@ yarn-error.log*
 
 # env files
 .env
+.env.local
 .env*.local
 
 # vercel
@@ -33,19 +33,20 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# prisma
-db/
-*.db
-*.db-journal
+# database (local dev)
+db/*.db
+db/*.db-journal
+
+# dev logs
+dev.log
+server.log
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# bun
-bun.lock
-
-# zip files
-*.zip
+# claude / z.ai
+.claude
+.z-ai-config

@@ -1,159 +1,109 @@
-import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission } from '@/lib/auth';
+import { db } from '@/lib/db';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search");
-    const status = searchParams.get("status");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
-
-    const where: Record<string, unknown> = {};
-
-    if (status) {
-      where.status = status;
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search } },
-        { code: { contains: search } },
-        { city: { contains: search } },
-        { state: { contains: search } },
-      ];
-    }
+    const sites = await db.site.findMany({
+      select: {
+        id: true,
+        name: true,
+        clientId: true,
+        location: true,
+        description: true,
+        budget: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        client: {
+          select: { name: true },
+        },
+        _count: {
+          select: { expenses: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
 
-    const skip = (page - 1) * limit;
-
-    const [sites, total] = await Promise.all([
-      db.site.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: "desc" },
-      }),
-      db.site.count({ where }),
-    ]);
+    // Compute total spent (expenses + requisitions) per site
+    const sitesWithSpent = await Promise.all(sites.map(async (site) => {
+      const [expenseTotal, requisitionTotal] = await Promise.all([
+        db.expense.aggregate({ where: { siteId: site.id }, _sum: { amount: true } }),
+        db.requisition.aggregate({ where: { siteId: site.id }, _sum: { totalAmount: true } }),
+      ])
+      return {
+        ...site,
+        totalSpent: (expenseTotal._sum.amount || 0) + (requisitionTotal._sum.totalAmount || 0),
+      }
+    }))
 
     return NextResponse.json({
-      sites,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      sites: sitesWithSpent.map((s) => ({
+        ...s,
+        clientName: s.client.name,
+        client: undefined,
+        expenseCount: s._count.expenses,
+        _count: undefined,
+      })),
     });
-  } catch (error) {
-    console.error("GET sites error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error('Get sites error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!checkPermission(session.role, 'MANAGE_SITES')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
-    const { name, code, address, city, state, pincode } = body;
+    const { name, clientId, location, description, budget } = body;
 
-    if (!name || !code) {
+    if (!name || !clientId) {
       return NextResponse.json(
-        { error: "Name and code are required" },
+        { error: 'Site name and client are required' },
         { status: 400 }
       );
     }
 
-    const existingName = await db.site.findUnique({ where: { name } });
-    if (existingName) {
+    const clientExists = await db.client.findUnique({ where: { id: clientId } });
+    if (!clientExists) {
       return NextResponse.json(
-        { error: "Site with this name already exists" },
-        { status: 400 }
-      );
-    }
-
-    const existingCode = await db.site.findUnique({ where: { code } });
-    if (existingCode) {
-      return NextResponse.json(
-        { error: "Site with this code already exists" },
-        { status: 400 }
+        { error: 'Client not found' },
+        { status: 404 }
       );
     }
 
     const site = await db.site.create({
       data: {
         name,
-        code,
-        address: address || null,
-        city: city || null,
-        state: state || null,
-        pincode: pincode || null,
+        clientId,
+        location: location || null,
+        description: description || null,
+        budget: budget || 0,
+      },
+      include: {
+        client: {
+          select: { name: true },
+        },
       },
     });
 
-    return NextResponse.json({ site }, { status: 201 });
-  } catch (error) {
-    console.error("POST sites error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { id, name, code, address, city, state, pincode, status } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: "Site ID is required" }, { status: 400 });
-    }
-
-    const existing = await db.site.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "Site not found" }, { status: 404 });
-    }
-
-    if (name && name !== existing.name) {
-      const nameExists = await db.site.findUnique({ where: { name } });
-      if (nameExists) {
-        return NextResponse.json(
-          { error: "Site with this name already exists" },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (code && code !== existing.code) {
-      const codeExists = await db.site.findUnique({ where: { code } });
-      if (codeExists) {
-        return NextResponse.json(
-          { error: "Site with this code already exists" },
-          { status: 400 }
-        );
-      }
-    }
-
-    const site = await db.site.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(code !== undefined && { code }),
-        ...(address !== undefined && { address }),
-        ...(city !== undefined && { city }),
-        ...(state !== undefined && { state }),
-        ...(pincode !== undefined && { pincode }),
-        ...(status !== undefined && { status }),
-      },
-    });
-
-    return NextResponse.json({ site });
-  } catch (error) {
-    console.error("PUT sites error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ clientName: site.client.name, ...site, client: undefined }, { status: 201 });
+  } catch (error: any) {
+    console.error('Create site error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

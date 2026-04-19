@@ -6,6 +6,7 @@ import { ensureSeeded } from '@/lib/seed'
 export async function POST(request: NextRequest) {
   try {
     await ensureSeeded()
+
     const body = await request.json()
     const { email, password } = body
 
@@ -19,6 +20,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!user) {
+      console.warn(`Login attempt for non-existent email: ${email}`)
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
@@ -28,6 +30,7 @@ export async function POST(request: NextRequest) {
 
     const valid = await verifyPassword(password, user.password)
     if (!valid) {
+      console.warn(`Login attempt with wrong password for: ${email}`)
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
@@ -43,14 +46,21 @@ export async function POST(request: NextRequest) {
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
     })
 
+    // Detect HTTPS for Secure flag
+    const isSecure = request.headers.get('x-forwarded-proto') === 'https' || process.env.NODE_ENV === 'production'
+    const secureFlag = isSecure ? '; Secure' : ''
+
     response.headers.set(
       'Set-Cookie',
-      `token=${token}; Path=/; HttpOnly; Max-Age=${30 * 24 * 60 * 60}; SameSite=Lax`
+      `token=${token}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=${30 * 24 * 60 * 60}`
     )
 
     return response
   } catch (error) {
-    console.error('Login error:', error)
-    return NextResponse.json({ error: 'Login failed' }, { status: 500 })
+    console.error('Login error:', error instanceof Error ? error.message : error)
+    return NextResponse.json(
+      { error: 'Login failed', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
   }
 }

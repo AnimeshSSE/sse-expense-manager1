@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client'
 
-// Singleton pattern for PrismaClient
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
@@ -8,7 +7,6 @@ const globalForPrisma = globalThis as unknown as {
 function createDb(): PrismaClient {
   const dbUrl = process.env.DATABASE_URL || ''
 
-  // If using Turso (libsql:// URL), use the libSQL adapter
   if (dbUrl.startsWith('libsql://')) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { PrismaLibSQL } = require('@prisma/adapter-libsql')
@@ -24,7 +22,6 @@ function createDb(): PrismaClient {
     return new PrismaClient({ adapter, log: ['error'] })
   }
 
-  // Local SQLite development (file: URL)
   return new PrismaClient({ log: ['error'] })
 }
 

@@ -1,48 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id } = await params
+
+    // USER can only see their own employee
+    if (!checkPermission(session.role, 'MANAGE_EMPLOYEES')) {
+      const myEmployee = await db.employee.findUnique({ where: { userId: session.id } })
+      if (!myEmployee || myEmployee.id !== id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
-    const { id } = await params;
 
-    const isAdminOrAccountant = session.role === 'ADMIN' || session.role === 'ACCOUNTANT';
-
-    const where: any = { id };
-    if (!isAdminOrAccountant) {
-      where.userId = session.id;
-    }
-
-    const employee = await db.employee.findFirst({
-      where,
+    const employee = await db.employee.findUnique({
+      where: { id },
       include: {
         user: { select: { id: true, name: true, email: true, role: true, isActive: true } },
-        salaries: {
-          orderBy: { month: 'desc' },
-          take: 1,
-        },
-        _count: {
-          select: { attendances: true, leaves: true, salaries: true },
-        },
       },
-    });
+    })
 
-    if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
-    }
+    if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
-    return NextResponse.json({ employee });
-  } catch (error: any) {
-    console.error('Get employee error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ employee })
+  } catch (error) {
+    console.error('GET /api/employees/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to fetch employee' }, { status: 500 })
   }
 }
 
@@ -51,102 +43,111 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!checkPermission(session.role, 'MANAGE_EMPLOYEES')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (session.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admin can update employees' }, { status: 403 });
-    }
+    const { id } = await params
+    const body = await request.json()
+    const { employeeCode, designation, department, phone, address, joiningDate, baseSalary, bankAccount, bankName, bankIfsc, panNumber, aadhaarNumber, isActive } = body
 
-    const { id } = await params;
-    const body = await request.json();
+    const existing = await db.employee.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
-    const existing = await db.employee.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
-    }
-
-    const oldValues = formatAuditValues(existing);
-    const updateData: any = {};
-
-    const allowedFields = ['designation', 'department', 'phone', 'address', 'baseSalary', 'bankAccount', 'bankName', 'bankIfsc', 'panNumber', 'aadhaarNumber', 'isActive'];
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        if (field === 'baseSalary') {
-          updateData[field] = parseFloat(body[field]);
-        } else if (field === 'isActive') {
-          updateData[field] = body[field] === true;
-        } else {
-          updateData[field] = body[field];
-        }
+    if (employeeCode && employeeCode !== existing.employeeCode) {
+      const codeTaken = await db.employee.findUnique({ where: { employeeCode } })
+      if (codeTaken) {
+        return NextResponse.json({ error: 'Employee code already exists' }, { status: 400 })
       }
     }
+
+    const updateData: Record<string, unknown> = {}
+    if (employeeCode !== undefined) updateData.employeeCode = employeeCode
+    if (designation !== undefined) updateData.designation = designation
+    if (department !== undefined) updateData.department = department || null
+    if (phone !== undefined) updateData.phone = phone || null
+    if (address !== undefined) updateData.address = address || null
+    if (joiningDate !== undefined) updateData.joiningDate = joiningDate ? new Date(joiningDate) : new Date()
+    if (baseSalary !== undefined) updateData.baseSalary = baseSalary
+    if (bankAccount !== undefined) updateData.bankAccount = bankAccount || null
+    if (bankName !== undefined) updateData.bankName = bankName || null
+    if (bankIfsc !== undefined) updateData.bankIfsc = bankIfsc || null
+    if (panNumber !== undefined) updateData.panNumber = panNumber || null
+    if (aadhaarNumber !== undefined) updateData.aadhaarNumber = aadhaarNumber || null
+    if (isActive !== undefined) updateData.isActive = isActive
+
+    const oldValues = JSON.stringify({
+      employeeCode: existing.employeeCode,
+      designation: existing.designation,
+      department: existing.department,
+      baseSalary: existing.baseSalary,
+      isActive: existing.isActive,
+    })
 
     const employee = await db.employee.update({
       where: { id },
       data: updateData,
       include: {
-        user: { select: { id: true, name: true, email: true, role: true, isActive: true } },
+        user: { select: { id: true, name: true, email: true, role: true } },
       },
-    });
+    })
 
     await createAuditLog({
       userId: session.id,
       action: 'UPDATE_EMPLOYEE',
-      entityType: 'EMPLOYEE',
+      entityType: 'Employee',
       entityId: id,
       oldValues,
-      newValues: formatAuditValues(updateData),
-    });
+      newValues: JSON.stringify({
+        employeeCode: employee.employeeCode,
+        designation: employee.designation,
+        department: employee.department,
+        baseSalary: employee.baseSalary,
+        isActive: employee.isActive,
+      }),
+    })
 
-    return NextResponse.json({ employee });
-  } catch (error: any) {
-    console.error('Update employee error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ employee })
+  } catch (error) {
+    console.error('PUT /api/employees/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to update employee' }, { status: 500 })
   }
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!checkPermission(session.role, 'MANAGE_EMPLOYEES')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (session.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admin can delete employees' }, { status: 403 });
-    }
+    const { id } = await params
 
-    const { id } = await params;
-    const existing = await db.employee.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
-    }
+    const existing = await db.employee.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
 
-    const employee = await db.employee.update({
-      where: { id },
-      data: { isActive: false },
-      include: {
-        user: { select: { id: true, name: true, email: true, role: true, isActive: true } },
-      },
-    });
+    // Delete leaves first (cascade should handle this, but be explicit)
+    await db.leave.deleteMany({ where: { employeeId: id } })
+
+    await db.employee.delete({ where: { id } })
 
     await createAuditLog({
       userId: session.id,
       action: 'DELETE_EMPLOYEE',
-      entityType: 'EMPLOYEE',
+      entityType: 'Employee',
       entityId: id,
-      oldValues: formatAuditValues({ employeeCode: existing.employeeCode, designation: existing.designation }),
-    });
+      oldValues: JSON.stringify({ employeeCode: existing.employeeCode, designation: existing.designation }),
+    })
 
-    return NextResponse.json({ employee });
-  } catch (error: any) {
-    console.error('Delete employee error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('DELETE /api/employees/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to delete employee' }, { status: 500 })
   }
 }

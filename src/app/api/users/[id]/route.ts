@@ -1,23 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession, hashPassword } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!checkPermission(session.role, 'MANAGE_USERS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await context.params;
-
+    const { id } = await params
     const user = await db.user.findUnique({
       where: { id },
       select: {
@@ -26,55 +24,68 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         name: true,
         role: true,
         isActive: true,
+        token: true,
+        tokenExpiry: true,
         lastLogin: true,
         createdAt: true,
+        updatedAt: true,
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            designation: true,
+            department: true,
+          },
+        },
       },
-    });
+    })
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
+    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    return NextResponse.json({ user });
-  } catch (error: any) {
-    console.error('Get user error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ user })
+  } catch (error) {
+    console.error('GET /api/users/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to fetch user' }, { status: 500 })
   }
 }
 
-export async function PUT(request: NextRequest, context: RouteContext) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!checkPermission(session.role, 'MANAGE_USERS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await context.params;
-    const body = await request.json();
-    const { name, role, isActive } = body;
+    const { id } = await params
+    const body = await request.json()
+    const { name, email, role, isActive, password } = body
 
-    const existingUser = await db.user.findUnique({ where: { id } });
-    if (!existingUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    const existing = await db.user.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    if (email && email !== existing.email) {
+      const emailTaken = await db.user.findUnique({ where: { email } })
+      if (emailTaken) {
+        return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+      }
     }
 
-    const oldValues = formatAuditValues({
-      name: existingUser.name,
-      role: existingUser.role,
-      isActive: existingUser.isActive,
-    });
+    const updateData: Record<string, unknown> = {}
+    if (name !== undefined) updateData.name = name
+    if (email !== undefined) updateData.email = email
+    if (role !== undefined) updateData.role = role
+    if (isActive !== undefined) updateData.isActive = isActive
+    if (password) updateData.password = await hashPassword(password)
 
-    const updatedUser = await db.user.update({
+    const oldValues = JSON.stringify({ name: existing.name, email: existing.email, role: existing.role, isActive: existing.isActive })
+
+    const user = await db.user.update({
       where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(role !== undefined && { role }),
-        ...(isActive !== undefined && { isActive }),
-      },
+      data: updateData,
       select: {
         id: true,
         email: true,
@@ -84,75 +95,61 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         lastLogin: true,
         createdAt: true,
       },
-    });
-
-    const newValues = formatAuditValues({
-      name: updatedUser.name,
-      role: updatedUser.role,
-      isActive: updatedUser.isActive,
-    });
+    })
 
     await createAuditLog({
       userId: session.id,
       action: 'UPDATE_USER',
-      entityType: 'USER',
+      entityType: 'User',
       entityId: id,
       oldValues,
-      newValues,
-    });
+      newValues: JSON.stringify({ name: user.name, email: user.email, role: user.role, isActive: user.isActive }),
+    })
 
-    return NextResponse.json({ user: updatedUser });
-  } catch (error: any) {
-    console.error('Update user error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ user })
+  } catch (error) {
+    console.error('PUT /api/users/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!checkPermission(session.role, 'MANAGE_USERS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await context.params;
+    const { id } = await params
 
     if (id === session.id) {
-      return NextResponse.json(
-        { error: 'Cannot delete your own account' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 })
     }
 
-    const user = await db.user.findUnique({ where: { id } });
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
+    const existing = await db.user.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-    const oldValues = formatAuditValues({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-    });
-
-    await db.user.delete({ where: { id } });
+    const user = await db.user.update({
+      where: { id },
+      data: { isActive: false, token: null, tokenExpiry: null },
+      select: { id: true, email: true, name: true },
+    })
 
     await createAuditLog({
       userId: session.id,
       action: 'DELETE_USER',
-      entityType: 'USER',
+      entityType: 'User',
       entityId: id,
-      oldValues,
-    });
+      oldValues: JSON.stringify({ name: existing.name, email: existing.email }),
+    })
 
-    return NextResponse.json({ message: 'User deleted successfully' });
-  } catch (error: any) {
-    console.error('Delete user error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ user })
+  } catch (error) {
+    console.error('DELETE /api/users/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
   }
 }

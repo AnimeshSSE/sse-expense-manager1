@@ -1,34 +1,15 @@
-import { NextResponse } from 'next/server';
-import { getSession, getPermissions } from '@/lib/auth';
+import { NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const session = await getSession();
-
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      );
+    const user = await getSession()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const permissions = getPermissions(session.role);
-
-    return NextResponse.json({
-      user: {
-        id: session.id,
-        email: session.email,
-        name: session.name,
-        role: session.role,
-        isActive: session.isActive,
-      },
-      permissions,
-    });
-  } catch (error: any) {
-    console.error('Get session error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ user })
+  } catch (error) {
+    console.error('Get me error:', error)
+    return NextResponse.json({ error: 'Failed to get user' }, { status: 500 })
   }
 }

@@ -1,83 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function POST(request: NextRequest, context: RouteContext) {
+// POST /api/requisitions/[id]/reject
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    if (!checkPermission(session.role, 'VIEW_ALL_MIRS')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Check if user has any MIR approval permission
-    const canReject =
-      checkPermission(session.role, 'STOCK_MANAGER_APPROVE_MIR') ||
-      checkPermission(session.role, 'ADMIN_APPROVE_MIR');
-
-    if (!canReject) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const { id } = await context.params;
-    const body = await request.json();
-    const { reason } = body;
+    const { id } = await params
+    const { reason } = await req.json()
 
     if (!reason) {
-      return NextResponse.json(
-        { error: 'Rejection reason is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Rejection reason is required' }, { status: 400 })
     }
 
-    const requisition = await db.requisition.findUnique({ where: { id } });
-    if (!requisition) {
-      return NextResponse.json({ error: 'Requisition not found' }, { status: 404 });
+    const existing = await db.requisition.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // Can reject from PENDING, STOCK_MANAGER_APPROVED, ADMIN_APPROVED
+    const rejectableStatuses = ['PENDING', 'STOCK_MANAGER_APPROVED', 'ADMIN_APPROVED']
+    if (!rejectableStatuses.includes(existing.status)) {
+      return NextResponse.json({ error: `Cannot reject requisition in ${existing.status} status` }, { status: 400 })
     }
 
-    if (requisition.status === 'REJECTED' || requisition.status === 'RECEIVED') {
-      return NextResponse.json(
-        { error: 'Cannot reject an already rejected or received requisition' },
-        { status: 400 }
-      );
-    }
-
-    const oldValues = formatAuditValues({ status: requisition.status });
-
-    const updatedRequisition = await db.requisition.update({
+    const requisition = await db.requisition.update({
       where: { id },
       data: {
         status: 'REJECTED',
         rejectionReason: reason,
       },
       include: {
-        site: {
-          include: { client: { select: { id: true, name: true } } },
-        },
+        site: { include: { client: true } },
         user: { select: { id: true, name: true, email: true } },
-        boqItems: true,
+        stockManagerApprovedBy: { select: { id: true, name: true } },
+        adminApprovedBy: { select: { id: true, name: true } },
+        boqItems: { orderBy: { createdAt: 'asc' } },
       },
-    });
-
-    const newValues = formatAuditValues({
-      status: updatedRequisition.status,
-      rejectionReason: reason,
-    });
+    })
 
     await createAuditLog({
       userId: session.id,
-      action: 'REJECT_MIR',
+      action: 'REJECT_REQUISITION',
       entityType: 'REQUISITION',
       entityId: id,
-      oldValues,
-      newValues,
-    });
+      oldValues: JSON.stringify({ status: existing.status }),
+      newValues: JSON.stringify({ status: 'REJECTED', reason }),
+    })
 
-    return NextResponse.json({ requisition: updatedRequisition });
+    return NextResponse.json({ data: requisition })
   } catch (error: any) {
-    console.error('Reject MIR error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('POST /api/requisitions/[id]/reject error:', error)
+    return NextResponse.json({ error: 'Failed to reject requisition' }, { status: 500 })
   }
 }

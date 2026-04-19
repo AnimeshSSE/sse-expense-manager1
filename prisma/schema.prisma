@@ -77,15 +77,6 @@ enum LeaveStatus {
   CANCELLED
 }
 
-enum AttendanceStatus {
-  PRESENT
-  ABSENT
-  HALF_DAY
-  HOLIDAY
-  WEEK_OFF
-  LEAVE
-}
-
 // ==================== MODELS ====================
 
 model User {
@@ -139,12 +130,13 @@ model Site {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  client      Client       @relation(fields: [clientId], references: [id])
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   expenses    Expense[]
   requisitions Requisition[]
   advances    Advance[]
 
   @@index([clientId])
+  @@index([name])
 }
 
 model Category {
@@ -157,6 +149,7 @@ model Category {
   updatedAt   DateTime     @updatedAt
 
   expenses Expense[]
+  @@index([type])
 }
 
 model Expense {
@@ -233,6 +226,8 @@ model Requisition {
   @@index([siteId])
   @@index([userId])
   @@index([status])
+  @@index([siteId, status])
+  @@index([userId, status])
 }
 
 model BOQItem {
@@ -279,9 +274,11 @@ model Advance {
   adminApprovedBy        User?          @relation("AdvanceAdminApprovals", fields: [adminApprovedById], references: [id])
   paidBy                 User?          @relation("AdvancePaidBy", fields: [paidById], references: [id])
 
+  @@index([userId])
+  @@index([siteId])
+  @@index([status])
   @@index([userId, status])
   @@index([siteId, status])
-  @@index([userId, siteId])
 }
 
 model Comment {
@@ -319,63 +316,11 @@ model Employee {
   updatedAt     DateTime @updatedAt
 
   user          User          @relation(fields: [userId], references: [id])
-  salaries      Salary[]
-  attendances   Attendance[]
   leaves        Leave[]
 
   @@index([userId])
   @@index([employeeCode])
   @@index([designation])
-}
-
-model Salary {
-  id               String   @id @default(cuid())
-  employeeId       String
-  month            String
-  baseSalary       Float
-  hra              Float    @default(0)
-  da               Float    @default(0)
-  ta               Float    @default(0)
-  bonus            Float    @default(0)
-  deductions       Float    @default(0)
-  pf               Float    @default(0)
-  tds              Float    @default(0)
-  advanceDeduction Float    @default(0)
-  netSalary        Float
-  paidDate         DateTime?
-  status           String   @default("PENDING")
-  paymentMethod    String   @default("BANK_TRANSFER")
-  notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@index([employeeId])
-  @@index([month])
-  @@index([status])
-  @@index([employeeId, month])
-}
-
-model Attendance {
-  id            String           @id @default(cuid())
-  employeeId    String
-  date          DateTime
-  checkIn       DateTime?
-  checkOut      DateTime?
-  status        AttendanceStatus @default(PRESENT)
-  hoursWorked   Float            @default(0)
-  overtimeHours Float            @default(0)
-  notes         String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@unique([employeeId, date])
-  @@index([employeeId])
-  @@index([date])
-  @@index([status])
 }
 
 model Leave {

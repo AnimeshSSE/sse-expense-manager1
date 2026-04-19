@@ -1,226 +1,179 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
+import { Prisma } from '@prisma/client'
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function GET(_request: NextRequest, context: RouteContext) {
+// GET /api/requisitions/[id]
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id } = await context.params;
+    const { id } = await params
+
+    // Non-admin users can only view their own requisitions
+    if (!checkPermission(session.role, 'VIEW_ALL_MIRS')) {
+      const ownRequisition = await db.requisition.findFirst({
+        where: { id, userId: session.id },
+      })
+      if (!ownRequisition) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
 
     const requisition = await db.requisition.findUnique({
       where: { id },
       include: {
-        site: {
-          include: { client: { select: { id: true, name: true } } },
-        },
-        user: { select: { id: true, name: true, email: true } },
-        boqItems: true,
+        site: { include: { client: true } },
+        user: { select: { id: true, name: true, email: true, role: true } },
         stockManagerApprovedBy: { select: { id: true, name: true } },
         adminApprovedBy: { select: { id: true, name: true } },
+        boqItems: { orderBy: { createdAt: 'asc' } },
       },
-    });
+    })
 
-    if (!requisition) {
-      return NextResponse.json({ error: 'Requisition not found' }, { status: 404 });
-    }
+    if (!requisition) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Check access
-    if (
-      !checkPermission(session.role, 'VIEW_ALL_MIRS') &&
-      requisition.userId !== session.id
-    ) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    return NextResponse.json({ requisition });
+    return NextResponse.json({ data: requisition })
   } catch (error: any) {
-    console.error('Get requisition error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('GET /api/requisitions/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to fetch requisition' }, { status: 500 })
   }
 }
 
-export async function PUT(request: NextRequest, context: RouteContext) {
+// PUT /api/requisitions/[id]
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id } = await context.params;
-
-    const existingRequisition = await db.requisition.findUnique({
-      where: { id },
-      include: { boqItems: true },
-    });
-
-    if (!existingRequisition) {
-      return NextResponse.json({ error: 'Requisition not found' }, { status: 404 });
-    }
-
-    if (existingRequisition.userId !== session.id) {
-      return NextResponse.json(
-        { error: 'You can only edit your own requisitions' },
-        { status: 403 }
-      );
-    }
-
-    if (
-      existingRequisition.status !== 'PENDING' &&
-      existingRequisition.status !== 'RETURNED'
-    ) {
-      return NextResponse.json(
-        { error: 'Can only edit PENDING or RETURNED requisitions' },
-        { status: 400 }
-      );
-    }
-
-    const body = await request.json();
+    const { id } = await params
+    const body = await req.json()
     const {
-      title, description, requiredDate, priority,
-      notes, attachmentUrl, attachmentName, boqItems,
-    } = body;
+      siteId, title, description, requiredDate, priority, notes,
+      attachmentUrl, attachmentName, boqItems,
+    } = body
 
-    const oldValues = formatAuditValues({
-      title: existingRequisition.title,
-      description: existingRequisition.description,
-      requiredDate: existingRequisition.requiredDate,
-      priority: existingRequisition.priority,
-      totalAmount: existingRequisition.totalAmount,
-      boqItemCount: existingRequisition.boqItems.length,
-    });
+    const existing = await db.requisition.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Recalculate total amount from BOQ items if provided
-    let totalAmount = existingRequisition.totalAmount;
-    if (boqItems && Array.isArray(boqItems)) {
-      totalAmount = boqItems.reduce((sum: number, item: any) => {
-        const quantity = parseFloat(item.quantity) || 0;
-        const unitPrice = parseFloat(item.unitPrice) || 0;
-        return sum + quantity * unitPrice;
-      }, 0);
+    // Only the owner, admin, or stock manager can edit
+    if (existing.userId !== session.id && !checkPermission(session.role, 'VIEW_ALL_MIRS')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const updateData: any = {
-      ...(title !== undefined && { title }),
-      ...(description !== undefined && { description: description || null }),
-      ...(requiredDate !== undefined && { requiredDate: new Date(requiredDate) }),
-      ...(priority !== undefined && { priority }),
-      ...(notes !== undefined && { notes: notes || null }),
-      ...(attachmentUrl !== undefined && { attachmentUrl: attachmentUrl || null }),
-      ...(attachmentName !== undefined && { attachmentName: attachmentName || null }),
-      totalAmount,
-    };
-
-    // If status was RETURNED, set back to PENDING on edit
-    if (existingRequisition.status === 'RETURNED') {
-      updateData.status = 'PENDING';
-      updateData.returnReason = null;
+    // Only allow editing if PENDING or RETURNED
+    if (!['PENDING', 'RETURNED'].includes(existing.status)) {
+      return NextResponse.json({ error: 'Cannot edit requisition in current status' }, { status: 400 })
     }
 
-    // Handle BOQ items update
-    if (boqItems && Array.isArray(boqItems)) {
-      // Delete existing BOQ items and create new ones
-      await db.bOQItem.deleteMany({ where: { requisitionId: id } });
+    // Calculate total from BOQ items if provided
+    let totalAmount = existing.totalAmount
+    if (boqItems !== undefined) {
+      totalAmount = 0
+      for (const item of boqItems) {
+        item.totalPrice = (item.quantity || 0) * (item.unitPrice || 0)
+        totalAmount += item.totalPrice
+      }
+    }
 
+    // If boqItems array is provided, replace all existing items
+    let updateData: any = {}
+    if (siteId !== undefined) updateData.siteId = siteId
+    if (title !== undefined) updateData.title = title
+    if (description !== undefined) updateData.description = description
+    if (requiredDate !== undefined) updateData.requiredDate = new Date(requiredDate)
+    if (priority !== undefined) updateData.priority = priority
+    if (notes !== undefined) updateData.notes = notes
+    if (attachmentUrl !== undefined) updateData.attachmentUrl = attachmentUrl
+    if (attachmentName !== undefined) updateData.attachmentName = attachmentName
+    updateData.totalAmount = totalAmount
+
+    if (boqItems !== undefined) {
       updateData.boqItems = {
+        deleteMany: {},
         create: boqItems.map((item: any) => ({
           itemName: item.itemName,
           description: item.description || null,
-          quantity: parseFloat(item.quantity) || 0,
-          unit: item.unit || '',
-          unitPrice: parseFloat(item.unitPrice) || 0,
-          totalPrice: (parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0),
+          quantity: item.quantity || 0,
+          unit: item.unit || 'pcs',
+          unitPrice: item.unitPrice || 0,
+          totalPrice: item.totalPrice || 0,
           category: item.category || null,
           notes: item.notes || null,
         })),
-      };
+      }
     }
 
     const requisition = await db.requisition.update({
       where: { id },
       data: updateData,
       include: {
-        site: {
-          include: { client: { select: { id: true, name: true } } },
-        },
+        site: { include: { client: true } },
         user: { select: { id: true, name: true, email: true } },
-        boqItems: true,
+        stockManagerApprovedBy: { select: { id: true, name: true } },
+        adminApprovedBy: { select: { id: true, name: true } },
+        boqItems: { orderBy: { createdAt: 'asc' } },
       },
-    });
-
-    const newValues = formatAuditValues(updateData);
+    })
 
     await createAuditLog({
       userId: session.id,
       action: 'UPDATE_REQUISITION',
       entityType: 'REQUISITION',
       entityId: id,
-      oldValues,
-      newValues,
-    });
+      oldValues: JSON.stringify({ title: existing.title, totalAmount: existing.totalAmount }),
+      newValues: JSON.stringify({ title: requisition.title, totalAmount: requisition.totalAmount }),
+    })
 
-    return NextResponse.json({ requisition });
+    return NextResponse.json({ data: requisition })
   } catch (error: any) {
-    console.error('Update requisition error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('PUT /api/requisitions/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to update requisition' }, { status: 500 })
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+// DELETE /api/requisitions/[id]
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id } = await params
+
+    const existing = await db.requisition.findUnique({ where: { id } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // Only owner or admin can delete, and only if PENDING or RETURNED
+    if (existing.userId !== session.id && session.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    if (!['PENDING', 'RETURNED', 'REJECTED'].includes(existing.status)) {
+      return NextResponse.json({ error: 'Cannot delete requisition in current status' }, { status: 400 })
     }
 
-    const { id } = await context.params;
-
-    const requisition = await db.requisition.findUnique({ where: { id } });
-    if (!requisition) {
-      return NextResponse.json({ error: 'Requisition not found' }, { status: 404 });
-    }
-
-    if (requisition.userId !== session.id) {
-      return NextResponse.json(
-        { error: 'You can only delete your own requisitions' },
-        { status: 403 }
-      );
-    }
-
-    if (requisition.status !== 'PENDING') {
-      return NextResponse.json(
-        { error: 'Can only delete PENDING requisitions' },
-        { status: 400 }
-      );
-    }
-
-    const oldValues = formatAuditValues({
-      id: requisition.id,
-      title: requisition.title,
-      totalAmount: requisition.totalAmount,
-      status: requisition.status,
-    });
-
-    // BOQ items will be cascade deleted
-    await db.requisition.delete({ where: { id } });
+    await db.requisition.delete({ where: { id } })
 
     await createAuditLog({
       userId: session.id,
       action: 'DELETE_REQUISITION',
       entityType: 'REQUISITION',
       entityId: id,
-      oldValues,
-    });
+      oldValues: JSON.stringify({ title: existing.title }),
+    })
 
-    return NextResponse.json({ message: 'Requisition deleted successfully' });
+    return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('Delete requisition error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('DELETE /api/requisitions/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to delete requisition' }, { status: 500 })
   }
 }

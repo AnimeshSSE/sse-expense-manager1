@@ -1,310 +1,166 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
-import { PaymentMethod } from '@prisma/client';
-import * as XLSX from 'xlsx';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
+import { PaymentMethod } from '@prisma/client'
+import * as XLSX from 'xlsx'
 
-const MAX_ROWS = 500;
-
-// Normalize header name: lowercase, trim, replace spaces with underscores
-function normalizeHeader(header: string): string {
-  return header.toLowerCase().trim().replace(/\s+/g, '_');
-}
-
-// Column mapping: normalized header -> internal field
-const EXPENSE_COLUMNS: Record<string, string> = {
-  site_name: 'siteName',
-  category_name: 'categoryName',
-  amount: 'amount',
-  description: 'description',
-  expense_date: 'expenseDate',
-  seller_name: 'sellerName',
-  invoice_number: 'invoiceNumber',
-  payment_method: 'paymentMethod',
-  notes: 'notes',
-};
-
-const REQUIRED_COLUMNS = ['siteName', 'categoryName', 'amount', 'description', 'expenseDate'];
-
-function parseExpenseDate(value: unknown): Date | null {
-  if (value == null) return null;
-  const str = String(value).trim();
-  if (!str) return null;
-
-  // Try DD/MM/YYYY
-  const dmyMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (dmyMatch) {
-    const [, d, m, y] = dmyMatch;
-    const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
-    if (!isNaN(date.getTime())) return date;
-  }
-
-  // Try YYYY-MM-DD or any ISO-like format
-  const isoDate = new Date(str);
-  if (!isNaN(isoDate.getTime())) return isoDate;
-
-  return null;
-}
-
-function parsePaymentMethod(value: unknown): PaymentMethod | null {
-  if (value == null) return null;
-  const str = String(value).trim().toUpperCase();
-  if (Object.values(PaymentMethod).includes(str as PaymentMethod)) {
-    return str as PaymentMethod;
-  }
-  return null;
-}
-
-function parseAmount(value: unknown): number | null {
-  if (value == null) return null;
-  const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
-  return isNaN(num) ? null : num;
-}
-
-export async function POST(request: NextRequest) {
+// POST /api/expenses/bulk-upload
+export async function POST(req: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!checkPermission(session.role, 'SUBMIT_EXPENSE')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    // Any authenticated user can bulk upload
+    const formData = await req.formData()
+    const file = formData.get('file') as File | null
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
-    const validExtensions = ['.xlsx', '.xls', '.csv'];
-    const fileName = file.name.toLowerCase();
-    const hasValidExt = validExtensions.some((ext) => fileName.endsWith(ext));
-    if (!hasValidExt) {
-      return NextResponse.json(
-        { error: 'Invalid file type. Only xlsx, xls, and csv files are accepted.' },
-        { status: 400 }
-      );
+    const buffer = Buffer.from(await file.arrayBuffer())
+    let workbook: XLSX.WorkBook
+
+    const fileName = file.name.toLowerCase()
+    if (fileName.endsWith('.csv')) {
+      workbook = XLSX.read(buffer, { type: 'buffer' })
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      workbook = XLSX.read(buffer, { type: 'buffer' })
+    } else {
+      return NextResponse.json({ error: 'Invalid file format. Use .xlsx or .csv' }, { status: 400 })
     }
 
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+    const sheetName = workbook.SheetNames[0]
+    const sheet = workbook.Sheets[sheetName]
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
 
-    if (rawRows.length === 0) {
-      return NextResponse.json({ error: 'File is empty or has no data rows.' }, { status: 400 });
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({ error: 'File is empty' }, { status: 400 })
     }
 
-    if (rawRows.length > MAX_ROWS) {
-      return NextResponse.json(
-        { error: `File exceeds maximum of ${MAX_ROWS} rows. Found ${rawRows.length} rows.` },
-        { status: 400 }
-      );
+    // Pre-load sites and categories for matching
+    const sites = await db.site.findMany({ include: { client: true } })
+    const categories = await db.category.findMany()
+
+    const siteMap = new Map<string, string>() // name -> id
+    for (const s of sites) {
+      siteMap.set(s.name.toLowerCase().trim(), s.id)
     }
 
-    // Build header mapping from actual file headers
-    const actualHeaders = Object.keys(rawRows[0]);
-    const headerMap: Record<string, string> = {};
-    for (const header of actualHeaders) {
-      const normalized = normalizeHeader(header);
-      if (EXPENSE_COLUMNS[normalized]) {
-        headerMap[header] = EXPENSE_COLUMNS[normalized];
-      }
+    const categoryMap = new Map<string, string>() // name -> id
+    for (const c of categories) {
+      categoryMap.set(c.name.toLowerCase().trim(), c.id)
     }
 
-    // Validate required columns exist
-    const mappedFields = new Set(Object.values(headerMap));
-    const missingColumns = REQUIRED_COLUMNS.filter((col) => !mappedFields.has(col));
-    if (missingColumns.length > 0) {
-      return NextResponse.json(
-        {
-          error: `Missing required columns: ${missingColumns.join(', ')}. Please ensure your file has the correct headers.`,
-        },
-        { status: 400 }
-      );
-    }
+    const validPaymentMethods = Object.values(PaymentMethod)
 
-    // Pre-fetch all sites and categories for lookup
-    const [allSites, allCategories] = await Promise.all([
-      db.site.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
-      db.category.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
-    ]);
+    const errors: { row: number; field: string; message: string }[] = []
+    const created: string[] = []
 
-    const siteMap = new Map(allSites.map((s) => [s.name.toLowerCase(), s.id]));
-    const categoryMap = new Map(allCategories.map((c) => [c.name.toLowerCase(), c.id]));
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      const rowNum = i + 2 // 1-indexed, skip header
 
-    // Process rows
-    const errors: { row: number; error: string }[] = [];
-    const validExpenses: {
-      siteId: string;
-      categoryId: string;
-      amount: number;
-      description: string;
-      expenseDate: Date;
-      sellerName: string | null;
-      invoiceNumber: string | null;
-      paymentMethod: PaymentMethod;
-      notes: string | null;
-      isLateSubmission: boolean;
-      daysLate: number;
-    }[] = [];
+      try {
+        // Validate required columns
+        const siteName = String(row.siteName || '').trim()
+        const categoryName = String(row.categoryName || '').trim()
+        const description = String(row.description || '').trim()
+        const amountRaw = row.amount
+        const expenseDateRaw = row.expenseDate
+        const paymentMethodRaw = String(row.paymentMethod || 'CASH').trim().toUpperCase()
 
-    const submissionDate = new Date();
-
-    for (let i = 0; i < rawRows.length; i++) {
-      const rowNum = i + 2; // Excel row numbers start at 1, +1 for header
-      const raw = rawRows[i];
-
-      // Map raw row to internal fields
-      const row: Record<string, unknown> = {};
-      for (const [header, field] of Object.entries(headerMap)) {
-        row[field] = raw[header];
-      }
-
-      // Validate required fields
-      const missing = REQUIRED_COLUMNS.filter((col) => {
-        const val = row[col];
-        return val == null || String(val).trim() === '';
-      });
-
-      if (missing.length > 0) {
-        errors.push({ row: rowNum, error: `Missing required fields: ${missing.join(', ')}` });
-        continue;
-      }
-
-      // Validate site name
-      const siteName = String(row.siteName).trim();
-      const siteId = siteMap.get(siteName.toLowerCase());
-      if (!siteId) {
-        errors.push({ row: rowNum, error: `Site "${siteName}" not found in database` });
-        continue;
-      }
-
-      // Validate category name
-      const categoryName = String(row.categoryName).trim();
-      const categoryId = categoryMap.get(categoryName.toLowerCase());
-      if (!categoryId) {
-        errors.push({ row: rowNum, error: `Category "${categoryName}" not found in database` });
-        continue;
-      }
-
-      // Validate amount
-      const amount = parseAmount(row.amount);
-      if (amount === null || amount <= 0) {
-        errors.push({ row: rowNum, error: 'Amount must be a positive number' });
-        continue;
-      }
-
-      // Validate expense date
-      const expenseDate = parseExpenseDate(row.expenseDate);
-      if (!expenseDate) {
-        errors.push({
-          row: rowNum,
-          error: `Invalid date "${row.expenseDate}". Use DD/MM/YYYY or YYYY-MM-DD format.`,
-        });
-        continue;
-      }
-
-      // Validate payment method (optional, default CASH)
-      let paymentMethod: PaymentMethod = PaymentMethod.CASH;
-      if (row.paymentMethod != null && String(row.paymentMethod).trim() !== '') {
-        const parsed = parsePaymentMethod(row.paymentMethod);
-        if (!parsed) {
-          errors.push({
-            row: rowNum,
-            error: `Invalid payment method "${row.paymentMethod}". Must be one of: CASH, UPI, CREDIT, OFFICE.`,
-          });
-          continue;
+        if (!siteName) { errors.push({ row: rowNum, field: 'siteName', message: 'Site name is required' }); continue }
+        if (!categoryName) { errors.push({ row: rowNum, field: 'categoryName', message: 'Category name is required' }); continue }
+        if (!description) { errors.push({ row: rowNum, field: 'description', message: 'Description is required' }); continue }
+        if (!amountRaw || isNaN(Number(amountRaw)) || Number(amountRaw) <= 0) {
+          errors.push({ row: rowNum, field: 'amount', message: 'Valid positive amount is required' }); continue
         }
-        paymentMethod = parsed;
-      }
+        if (!expenseDateRaw) { errors.push({ row: rowNum, field: 'expenseDate', message: 'Expense date is required' }); continue }
 
-      // Calculate late submission
-      const daysDiff = Math.floor(
-        (submissionDate.getTime() - expenseDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const isLateSubmission = daysDiff > 3;
-      const daysLate = isLateSubmission ? daysDiff : 0;
+        // Match site
+        const siteId = siteMap.get(siteName.toLowerCase())
+        if (!siteId) { errors.push({ row: rowNum, field: 'siteName', message: `Site "${siteName}" not found` }); continue }
 
-      validExpenses.push({
-        siteId,
-        categoryId,
-        amount,
-        description: String(row.description).trim(),
-        expenseDate,
-        sellerName: row.sellerName ? String(row.sellerName).trim() : null,
-        invoiceNumber: row.invoiceNumber ? String(row.invoiceNumber).trim() : null,
-        paymentMethod,
-        notes: row.notes ? String(row.notes).trim() : null,
-        isLateSubmission,
-        daysLate,
-      });
-    }
+        // Match category
+        const categoryId = categoryMap.get(categoryName.toLowerCase())
+        if (!categoryId) { errors.push({ row: rowNum, field: 'categoryName', message: `Category "${categoryName}" not found` }); continue }
 
-    if (validExpenses.length === 0) {
-      return NextResponse.json({
-        success: false,
-        created: 0,
-        errors,
-      });
-    }
+        // Validate payment method
+        let paymentMethod: PaymentMethod = PaymentMethod.CASH
+        if (validPaymentMethods.includes(paymentMethodRaw as PaymentMethod)) {
+          paymentMethod = paymentMethodRaw as PaymentMethod
+        } else if (paymentMethodRaw !== '') {
+          errors.push({ row: rowNum, field: 'paymentMethod', message: `Invalid payment method: ${paymentMethodRaw}` }); continue
+        }
 
-    // Create all expenses in a transaction
-    const createdExpenses = await db.$transaction(
-      validExpenses.map((expense) =>
-        db.expense.create({
+        // Parse date
+        let expenseDate: Date
+        if (typeof expenseDateRaw === 'number') {
+          // Excel serial date
+          expenseDate = new Date((expenseDateRaw - 25569) * 86400 * 1000)
+        } else {
+          expenseDate = new Date(String(expenseDateRaw))
+          if (isNaN(expenseDate.getTime())) {
+            errors.push({ row: rowNum, field: 'expenseDate', message: 'Invalid date format' }); continue
+          }
+        }
+
+        // Calculate late submission
+        const now = new Date()
+        const diffMs = now.getTime() - expenseDate.getTime()
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+        const isLateSubmission = diffDays > 7
+        const daysLate = isLateSubmission ? diffDays : 0
+
+        // Determine userId
+        let userId = session.id
+        if (row.userId && checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+          const targetUser = await db.user.findUnique({ where: { id: String(row.userId) }, select: { id: true, isActive: true } })
+          if (targetUser && targetUser.isActive) userId = targetUser.id
+        }
+
+        const expense = await db.expense.create({
           data: {
-            siteId: expense.siteId,
-            categoryId: expense.categoryId,
-            userId: session.id,
-            amount: expense.amount,
-            description: expense.description,
-            expenseDate: expense.expenseDate,
-            submissionDate,
-            sellerName: expense.sellerName,
-            invoiceNumber: expense.invoiceNumber,
-            paymentMethod: expense.paymentMethod,
-            notes: expense.notes,
-            isLateSubmission: expense.isLateSubmission,
-            daysLate: expense.daysLate,
+            siteId,
+            categoryId,
+            userId,
+            amount: Number(amountRaw),
+            description,
+            expenseDate,
+            paymentMethod,
+            sellerName: String(row.sellerName || '').trim() || null,
+            invoiceNumber: String(row.invoiceNumber || '').trim() || null,
+            notes: String(row.notes || '').trim() || null,
+            isLateSubmission,
+            daysLate,
           },
         })
-      )
-    );
 
-    // Create audit logs for each created expense
-    await Promise.all(
-      createdExpenses.map((expense, index) =>
-        createAuditLog({
-          userId: session.id,
-          action: 'BULK_UPLOAD_EXPENSE',
-          entityType: 'EXPENSE',
-          entityId: expense.id,
-          newValues: formatAuditValues({
-            siteId: validExpenses[index].siteId,
-            categoryId: validExpenses[index].categoryId,
-            amount: validExpenses[index].amount,
-            description: validExpenses[index].description,
-            expenseDate: validExpenses[index].expenseDate.toISOString(),
-            paymentMethod: validExpenses[index].paymentMethod,
-            isLateSubmission: validExpenses[index].isLateSubmission,
-            daysLate: validExpenses[index].daysLate,
-          }),
-        })
-      )
-    );
+        created.push(expense.id)
+      } catch (err) {
+        errors.push({ row: rowNum, field: 'unknown', message: 'Unexpected error processing row' })
+      }
+    }
+
+    await createAuditLog({
+      userId: session.id,
+      action: 'BULK_UPLOAD_EXPENSES',
+      entityType: 'EXPENSE',
+      newValues: JSON.stringify({ fileName: file.name, created: created.length, errors: errors.length }),
+    })
 
     return NextResponse.json({
-      success: true,
-      created: createdExpenses.length,
+      success: created.length,
       errors,
-    });
-  } catch (error: unknown) {
-    console.error('Bulk upload expenses error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      created,
+    })
+  } catch (error) {
+    console.error('POST /api/expenses/bulk-upload error:', error)
+    return NextResponse.json({ error: 'Failed to process bulk upload' }, { status: 500 })
   }
 }

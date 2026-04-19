@@ -1,63 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!checkPermission(session.role, 'APPROVE_LEAVE')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (session.role !== 'ADMIN' && session.role !== 'ACCOUNTANT') {
-      return NextResponse.json({ error: 'Only admin or accountant can reject leaves' }, { status: 403 });
+    const { id } = await params
+    const body = await request.json()
+    const { reason } = body
+
+    if (!reason || !reason.trim()) {
+      return NextResponse.json({ error: 'Rejection reason is required' }, { status: 400 })
     }
 
-    const { id } = await params;
-    const body = await request.json();
-    const { reason } = body;
+    const leave = await db.leave.findUnique({ where: { id } })
+    if (!leave) return NextResponse.json({ error: 'Leave not found' }, { status: 404 })
 
-    if (!reason) {
-      return NextResponse.json({ error: 'Rejection reason is required' }, { status: 400 });
+    if (leave.status !== 'PENDING') {
+      return NextResponse.json({ error: 'Only pending leaves can be rejected' }, { status: 400 })
     }
 
-    const existing = await db.leave.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Leave not found' }, { status: 404 });
-    }
-
-    if (existing.status !== 'PENDING') {
-      return NextResponse.json({ error: 'Only pending leaves can be rejected' }, { status: 400 });
-    }
-
-    const leave = await db.leave.update({
+    const updated = await db.leave.update({
       where: { id },
       data: {
         status: 'REJECTED',
-        rejectionReason: reason,
+        approvedById: session.id,
+        approvedAt: new Date(),
+        rejectionReason: reason.trim(),
       },
       include: {
         employee: {
-          include: { user: { select: { id: true, name: true, email: true } } },
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+          },
         },
+        approvedBy: { select: { id: true, name: true } },
       },
-    });
+    })
 
     await createAuditLog({
       userId: session.id,
       action: 'REJECT_LEAVE',
-      entityType: 'LEAVE',
+      entityType: 'Leave',
       entityId: id,
-      newValues: { employeeId: existing.employeeId, reason },
-    });
+      newValues: JSON.stringify({ status: 'REJECTED', reason: reason.trim() }),
+    })
 
-    return NextResponse.json({ leave });
-  } catch (error: any) {
-    console.error('Reject leave error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ leave: updated })
+  } catch (error) {
+    console.error('POST /api/leaves/[id]/reject error:', error)
+    return NextResponse.json({ error: 'Failed to reject leave' }, { status: 500 })
   }
 }

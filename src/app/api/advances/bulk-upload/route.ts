@@ -1,206 +1,111 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
-import * as XLSX from 'xlsx';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
+import * as XLSX from 'xlsx'
 
-const MAX_ROWS = 500;
-
-// Normalize header name: lowercase, trim, replace spaces with underscores
-function normalizeHeader(header: string): string {
-  return header.toLowerCase().trim().replace(/\s+/g, '_');
-}
-
-// Column mapping: normalized header -> internal field
-const ADVANCE_COLUMNS: Record<string, string> = {
-  site_name: 'siteName',
-  amount: 'amount',
-  purpose: 'purpose',
-  notes: 'notes',
-};
-
-const REQUIRED_COLUMNS = ['siteName', 'amount', 'purpose'];
-
-function parseAmount(value: unknown): number | null {
-  if (value == null) return null;
-  const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
-  return isNaN(num) ? null : num;
-}
-
+// POST /api/advances/bulk-upload — parse xlsx/csv and create advances
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!checkPermission(session.role, 'SUBMIT_EXPENSE')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const formData = await request.formData()
+    const file = formData.get('file') as File | null
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
-    const validExtensions = ['.xlsx', '.xls', '.csv'];
-    const fileName = file.name.toLowerCase();
-    const hasValidExt = validExtensions.some((ext) => fileName.endsWith(ext));
-    if (!hasValidExt) {
-      return NextResponse.json(
-        { error: 'Invalid file type. Only xlsx, xls, and csv files are accepted.' },
-        { status: 400 }
-      );
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const workbook = XLSX.read(buffer, { type: 'buffer' })
+    const sheetName = workbook.SheetNames[0]
+    const sheet = workbook.Sheets[sheetName]
+    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet)
+
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({ error: 'Empty file or no data rows' }, { status: 400 })
     }
 
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
-
-    if (rawRows.length === 0) {
-      return NextResponse.json({ error: 'File is empty or has no data rows.' }, { status: 400 });
-    }
-
-    if (rawRows.length > MAX_ROWS) {
-      return NextResponse.json(
-        { error: `File exceeds maximum of ${MAX_ROWS} rows. Found ${rawRows.length} rows.` },
-        { status: 400 }
-      );
-    }
-
-    // Build header mapping from actual file headers
-    const actualHeaders = Object.keys(rawRows[0]);
-    const headerMap: Record<string, string> = {};
-    for (const header of actualHeaders) {
-      const normalized = normalizeHeader(header);
-      if (ADVANCE_COLUMNS[normalized]) {
-        headerMap[header] = ADVANCE_COLUMNS[normalized];
-      }
-    }
-
-    // Validate required columns exist
-    const mappedFields = new Set(Object.values(headerMap));
-    const missingColumns = REQUIRED_COLUMNS.filter((col) => !mappedFields.has(col));
-    if (missingColumns.length > 0) {
-      return NextResponse.json(
-        {
-          error: `Missing required columns: ${missingColumns.join(', ')}. Please ensure your file has the correct headers.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Pre-fetch all sites for lookup
+    // Pre-fetch all sites for matching
     const allSites = await db.site.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
-    });
+    })
 
-    const siteMap = new Map(allSites.map((s) => [s.name.toLowerCase(), s.id]));
+    const siteMap = new Map<string, string>()
+    for (const site of allSites) {
+      siteMap.set(site.name.toLowerCase().trim(), site.id)
+    }
 
-    // Process rows
-    const errors: { row: number; error: string }[] = [];
-    const validAdvances: {
-      siteId: string;
-      amount: number;
-      purpose: string;
-      notes: string | null;
-    }[] = [];
+    const errors: { row: number; message: string }[] = []
+    const successCount = { value: 0 }
 
-    for (let i = 0; i < rawRows.length; i++) {
-      const rowNum = i + 2; // Excel row numbers start at 1, +1 for header
-      const raw = rawRows[i];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      const rowNumber = i + 2 // 1-based, skip header
 
-      // Map raw row to internal fields
-      const row: Record<string, unknown> = {};
-      for (const [header, field] of Object.entries(headerMap)) {
-        row[field] = raw[header];
+      const siteName = (row.siteName || '').toString().trim()
+      const amount = parseFloat(row.amount)
+      const purpose = (row.purpose || '').toString().trim()
+      const notes = (row.notes || '').toString().trim()
+
+      if (!siteName) {
+        errors.push({ row: rowNumber, message: 'Missing site name' })
+        continue
       }
 
-      // Validate required fields
-      const missing = REQUIRED_COLUMNS.filter((col) => {
-        const val = row[col];
-        return val == null || String(val).trim() === '';
-      });
-
-      if (missing.length > 0) {
-        errors.push({ row: rowNum, error: `Missing required fields: ${missing.join(', ')}` });
-        continue;
+      if (!amount || amount <= 0 || isNaN(amount)) {
+        errors.push({ row: rowNumber, message: 'Invalid or missing amount' })
+        continue
       }
 
-      // Validate site name
-      const siteName = String(row.siteName).trim();
-      const siteId = siteMap.get(siteName.toLowerCase());
+      if (!purpose) {
+        errors.push({ row: rowNumber, message: 'Missing purpose' })
+        continue
+      }
+
+      const siteId = siteMap.get(siteName.toLowerCase())
       if (!siteId) {
-        errors.push({ row: rowNum, error: `Site "${siteName}" not found in database` });
-        continue;
+        errors.push({ row: rowNumber, message: `Site "${siteName}" not found` })
+        continue
       }
 
-      // Validate amount
-      const amount = parseAmount(row.amount);
-      if (amount === null || amount <= 0) {
-        errors.push({ row: rowNum, error: 'Amount must be a positive number' });
-        continue;
-      }
-
-      validAdvances.push({
-        siteId,
-        amount,
-        purpose: String(row.purpose).trim(),
-        notes: row.notes ? String(row.notes).trim() : null,
-      });
-    }
-
-    if (validAdvances.length === 0) {
-      return NextResponse.json({
-        success: false,
-        created: 0,
-        errors,
-      });
-    }
-
-    // Create all advances in a transaction
-    const createdAdvances = await db.$transaction(
-      validAdvances.map((advance) =>
-        db.advance.create({
+      try {
+        await db.advance.create({
           data: {
             userId: session.id,
-            siteId: advance.siteId,
-            amount: advance.amount,
-            purpose: advance.purpose,
-            notes: advance.notes,
+            siteId,
+            amount,
+            purpose,
+            notes: notes || null,
+            status: 'PENDING',
           },
         })
-      )
-    );
+        successCount.value++
+      } catch (err: any) {
+        errors.push({ row: rowNumber, message: err.message || 'Failed to create advance' })
+      }
+    }
 
-    // Create audit logs for each created advance
-    await Promise.all(
-      createdAdvances.map((advance, index) =>
-        createAuditLog({
-          userId: session.id,
-          action: 'BULK_UPLOAD_ADVANCE',
-          entityType: 'ADVANCE',
-          entityId: advance.id,
-          newValues: formatAuditValues({
-            siteId: validAdvances[index].siteId,
-            amount: validAdvances[index].amount,
-            purpose: validAdvances[index].purpose,
-          }),
-        })
-      )
-    );
+    await createAuditLog({
+      userId: session.id,
+      action: 'BULK_UPLOAD_ADVANCES',
+      entityType: 'Advance',
+      newValues: JSON.stringify({ total: rows.length, success: successCount.value, errors: errors.length }),
+    })
 
     return NextResponse.json({
       success: true,
-      created: createdAdvances.length,
-      errors,
-    });
-  } catch (error: unknown) {
-    console.error('Bulk upload advances error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      total: rows.length,
+      created: successCount.value,
+      errors: errors.length > 0 ? errors : undefined,
+    })
+  } catch (error) {
+    console.error('POST /api/advances/bulk-upload error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

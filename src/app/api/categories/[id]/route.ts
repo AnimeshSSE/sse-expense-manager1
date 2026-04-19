@@ -1,120 +1,152 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
+import { CategoryType } from '@prisma/client'
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function PUT(request: NextRequest, context: RouteContext) {
+// GET /api/categories/[id] — single category
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
+    const session = await getSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     if (!checkPermission(session.role, 'MANAGE_CATEGORIES')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await context.params;
-    const body = await request.json();
-    const { name, type, description, isActive } = body;
-
-    const existingCategory = await db.category.findUnique({ where: { id } });
-    if (!existingCategory) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 });
-    }
-
-    const oldValues = formatAuditValues({
-      name: existingCategory.name,
-      type: existingCategory.type,
-      description: existingCategory.description,
-      isActive: existingCategory.isActive,
-    });
-
-    const updatedCategory = await db.category.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(type !== undefined && { type }),
-        ...(description !== undefined && { description: description || null }),
-        ...(isActive !== undefined && { isActive }),
-      },
-    });
-
-    const newValues = formatAuditValues({
-      name: updatedCategory.name,
-      type: updatedCategory.type,
-      description: updatedCategory.description,
-      isActive: updatedCategory.isActive,
-    });
-
-    await createAuditLog({
-      userId: session.id,
-      action: 'UPDATE_CATEGORY',
-      entityType: 'CATEGORY',
-      entityId: id,
-      oldValues,
-      newValues,
-    });
-
-    return NextResponse.json({ category: updatedCategory });
-  } catch (error: any) {
-    console.error('Update category error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    if (!checkPermission(session.role, 'MANAGE_CATEGORIES')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const { id } = await context.params;
+    const { id } = await params
 
     const category = await db.category.findUnique({
       where: { id },
       include: {
         _count: { select: { expenses: true } },
       },
-    });
+    })
 
     if (!category) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
 
-    if (category._count.expenses > 0) {
+    return NextResponse.json({ data: category })
+  } catch (error) {
+    console.error('GET /api/categories/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to fetch category' }, { status: 500 })
+  }
+}
+
+// PUT /api/categories/[id] — update
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!checkPermission(session.role, 'MANAGE_CATEGORIES')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id } = await params
+    const body = await req.json()
+    const { name, type, description, isActive } = body
+
+    const existing = await db.category.findUnique({ where: { id } })
+    if (!existing) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+    }
+
+    if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
+      return NextResponse.json({ error: 'Category name cannot be empty' }, { status: 400 })
+    }
+
+    if (type && !Object.values(CategoryType).includes(type)) {
+      return NextResponse.json({ error: `Invalid type. Must be one of: ${Object.values(CategoryType).join(', ')}` }, { status: 400 })
+    }
+
+    const updateData: Record<string, unknown> = {}
+    if (name !== undefined) updateData.name = name.trim()
+    if (type !== undefined) updateData.type = type
+    if (description !== undefined) updateData.description = description || null
+    if (isActive !== undefined) updateData.isActive = isActive
+
+    const category = await db.category.update({
+      where: { id },
+      data: updateData,
+    })
+
+    await createAuditLog({
+      userId: session.id,
+      action: 'UPDATE_CATEGORY',
+      entityType: 'CATEGORY',
+      entityId: id,
+      oldValues: JSON.stringify(existing),
+      newValues: JSON.stringify(category),
+    })
+
+    return NextResponse.json({ data: category })
+  } catch (error) {
+    console.error('PUT /api/categories/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to update category' }, { status: 500 })
+  }
+}
+
+// DELETE /api/categories/[id] — delete
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!checkPermission(session.role, 'MANAGE_CATEGORIES')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id } = await params
+
+    const existing = await db.category.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { expenses: true } },
+      },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+    }
+
+    if (existing._count.expenses > 0) {
       return NextResponse.json(
-        { error: 'Cannot delete category with existing expenses' },
+        { error: `Cannot delete category with ${existing._count.expenses} expense(s). Delete or reassign expenses first.` },
         { status: 400 }
-      );
+      )
     }
 
-    const oldValues = formatAuditValues({
-      id: category.id,
-      name: category.name,
-      type: category.type,
-    });
-
-    await db.category.delete({ where: { id } });
+    await db.category.delete({ where: { id } })
 
     await createAuditLog({
       userId: session.id,
       action: 'DELETE_CATEGORY',
       entityType: 'CATEGORY',
       entityId: id,
-      oldValues,
-    });
+      oldValues: JSON.stringify(existing),
+    })
 
-    return NextResponse.json({ message: 'Category deleted successfully' });
-  } catch (error: any) {
-    console.error('Delete category error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('DELETE /api/categories/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to delete category' }, { status: 500 })
   }
 }

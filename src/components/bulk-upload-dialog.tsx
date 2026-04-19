@@ -48,7 +48,7 @@ export function BulkUploadDialog({ open, onOpenChange, type, onSuccess }: BulkUp
   const title = type === 'expenses' ? 'Bulk Upload Expenses' : 'Bulk Upload Advances'
   const acceptedTypes = '.xlsx,.xls,.csv'
 
-  const handleFileSelect = async (selectedFile: File) => {
+  const handleFileSelect = async (selectedFile: File | null) => {
     if (!selectedFile) return
 
     // Validate file type
@@ -233,7 +233,7 @@ export function BulkUploadDialog({ open, onOpenChange, type, onSuccess }: BulkUp
                 type="file"
                 accept={acceptedTypes}
                 className="hidden"
-                onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+                onChange={(e) => handleFileSelect(e.target.files?.[0] ?? null)}
               />
               {file ? (
                 <div className="flex items-center justify-center gap-3">

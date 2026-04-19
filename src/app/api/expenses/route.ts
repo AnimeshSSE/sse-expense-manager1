@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     if (paymentMethods) {
       const methods = paymentMethods.split(',').filter(Boolean);
-      const validMethods = methods.filter((m): m is PaymentMethod => Object.values(PaymentMethod).includes(m));
+      const validMethods = methods.filter((m): m is PaymentMethod => (Object.values(PaymentMethod) as string[]).includes(m));
       if (validMethods.length === 1) {
         where.paymentMethod = validMethods[0];
       } else if (validMethods.length > 1) {
@@ -93,10 +93,10 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { description: { contains: search, mode: 'insensitive' } },
-        { sellerName: { contains: search, mode: 'insensitive' } },
-        { invoiceNumber: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { description: { contains: search } },
+        { sellerName: { contains: search } },
+        { invoiceNumber: { contains: search } },
+        { user: { name: { contains: search } } },
       ];
     }
 

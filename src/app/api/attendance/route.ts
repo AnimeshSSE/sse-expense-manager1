@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No attendance records provided' }, { status: 400 });
     }
 
-    const created = [];
+    const created: any[] = [];
 
     for (const record of records) {
       const { employeeId, date, status, checkIn, checkOut, hoursWorked, overtimeHours, notes } = record;

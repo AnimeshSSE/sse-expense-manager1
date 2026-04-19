@@ -781,7 +781,7 @@ function LeavesTab() {
       if (canApprove) {
         setEmployees(await api.getEmployees({ status: 'ACTIVE' }))
       } else {
-        const emps = await api.getEmployees({ userId: user?.id })
+        const emps = await api.getEmployees({ userId: user?.id || '' })
         setEmployees(emps)
         if (emps.length > 0) {
           setLeaveForm((f) => ({ ...f, employeeId: emps[0].id }))

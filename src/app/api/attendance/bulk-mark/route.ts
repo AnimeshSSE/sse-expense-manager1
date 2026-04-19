@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     const dateObj = new Date(date);
-    const created: any[] = [];
+    const created = [];
     const errors: string[] = [];
 
     for (const record of records) {

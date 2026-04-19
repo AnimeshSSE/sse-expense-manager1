@@ -75,7 +75,7 @@ async function main() {
         title: 'MIR-' + String(i + 1).padStart(3, '0') + ': Materials Request',
         description: 'Materials for construction phase ' + (i + 1),
         requiredDate: new Date(date.getTime() + 14 * 86400000),
-        priority: ['LOW', 'MEDIUM', 'HIGH'][i % 3] as any,
+        priority: ['LOW', 'MEDIUM', 'HIGH'][i % 3],
         status,
       },
     });

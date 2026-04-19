@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         user: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 200,
     });
 
     // Group by month

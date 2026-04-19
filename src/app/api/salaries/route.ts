@@ -22,12 +22,6 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
-    const sortBy = searchParams.get('sortBy') || 'createdAt';
-    const sortOrder = searchParams.get('sortOrder') || 'desc';
-    const validSortFields = ['createdAt', 'month', 'baseSalary', 'netSalary', 'status', 'paidDate'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
-
     const where: Prisma.SalaryWhereInput = {};
     if (employeeId) where.employeeId = employeeId;
     if (month) where.month = month;
@@ -41,7 +35,7 @@ export async function GET(request: NextRequest) {
             include: { user: { select: { id: true, name: true, email: true } } },
           },
         },
-        orderBy: { [sortField]: sortDirection },
+        orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

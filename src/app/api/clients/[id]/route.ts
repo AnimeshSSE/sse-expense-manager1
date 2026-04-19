@@ -5,31 +5,6 @@ import { createAuditLog, formatAuditValues } from '@/lib/audit';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: NextRequest, context: RouteContext) {
-  try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    const { id } = await context.params;
-
-    const client = await db.client.findUnique({
-      where: { id },
-      include: { sites: true },
-    });
-
-    if (!client) {
-      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ client });
-  } catch (error: any) {
-    console.error('Get client error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const session = await getSession();

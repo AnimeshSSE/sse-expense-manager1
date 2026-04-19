@@ -30,17 +30,18 @@ export async function GET() {
       orderBy: { name: 'asc' },
     });
 
-    // Compute total spent (expenses + requisitions) per site
-    const sitesWithSpent = await Promise.all(sites.map(async (site) => {
-      const [expenseTotal, requisitionTotal] = await Promise.all([
-        db.expense.aggregate({ where: { siteId: site.id }, _sum: { amount: true } }),
-        db.requisition.aggregate({ where: { siteId: site.id }, _sum: { totalAmount: true } }),
-      ])
-      return {
-        ...site,
-        totalSpent: (expenseTotal._sum.amount || 0) + (requisitionTotal._sum.totalAmount || 0),
-      }
-    }))
+    // Optimized: Use GROUP BY instead of N+1 per-site queries (2S+1 → 3 queries)
+    const [expenseBySite, requisitionBySite] = await Promise.all([
+      db.expense.groupBy({ by: ['siteId'], _sum: { amount: true } }),
+      db.requisition.groupBy({ by: ['siteId'], _sum: { totalAmount: true } }),
+    ]);
+    const expenseMap = new Map(expenseBySite.map((e) => [e.siteId, e._sum.amount || 0]));
+    const reqMap = new Map(requisitionBySite.map((r) => [r.siteId, r._sum.totalAmount || 0]));
+
+    const sitesWithSpent = sites.map((site) => ({
+      ...site,
+      totalSpent: (expenseMap.get(site.id) || 0) + (reqMap.get(site.id) || 0),
+    }));
 
     return NextResponse.json({
       sites: sitesWithSpent.map((s) => ({

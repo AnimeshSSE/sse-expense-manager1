@@ -22,12 +22,6 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
-    const sortBy = searchParams.get('sortBy') || 'createdAt';
-    const sortOrder = searchParams.get('sortOrder') || 'desc';
-    const validSortFields = ['createdAt', 'startDate', 'endDate', 'totalDays', 'type', 'status', 'user.name'];
-    const safeSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
-
     const where: Prisma.LeaveWhereInput = {};
 
     if (!isAdminOrAccountant) {
@@ -53,10 +47,6 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const orderBy: Prisma.LeaveOrderByWithRelationInput = safeSortBy === 'user.name'
-      ? { employee: { user: { name: sortDirection } } }
-      : { [safeSortBy]: sortDirection };
-
     const [leaves, total] = await Promise.all([
       db.leave.findMany({
         where,
@@ -66,7 +56,7 @@ export async function GET(request: NextRequest) {
           },
           approvedBy: { select: { id: true, name: true } },
         },
-        orderBy,
+        orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

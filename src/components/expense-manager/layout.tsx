@@ -102,8 +102,8 @@ function NotificationBell() {
     async function fetchCounts() {
       try {
         const [pendingExp, returnedExp, pendingAdv] = await Promise.all([
-          api.getExpenses({ status: 'PENDING', userId: user?.id || '', limit: '1' }),
-          api.getExpenses({ status: 'RETURNED', userId: user?.id || '', limit: '1' }),
+          api.getExpenses({ status: 'PENDING', userId: user?.id, limit: '1' }),
+          api.getExpenses({ status: 'RETURNED', userId: user?.id, limit: '1' }),
           api.getAdvances({ status: 'PENDING', limit: '1' }),
         ])
         const newCounts: Record<string, number> = {

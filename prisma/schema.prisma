@@ -196,6 +196,10 @@ model Expense {
   @@index([categoryId])
   @@index([userId])
   @@index([status])
+  @@index([expenseDate])
+  @@index([userId, status])
+  @@index([siteId, status])
+  @@index([isLateSubmission, createdAt])
 }
 
 model Requisition {
@@ -275,9 +279,9 @@ model Advance {
   adminApprovedBy        User?          @relation("AdvanceAdminApprovals", fields: [adminApprovedById], references: [id])
   paidBy                 User?          @relation("AdvancePaidBy", fields: [paidById], references: [id])
 
-  @@index([userId])
-  @@index([siteId])
-  @@index([status])
+  @@index([userId, status])
+  @@index([siteId, status])
+  @@index([userId, siteId])
 }
 
 model Comment {
@@ -350,6 +354,7 @@ model Salary {
   @@index([employeeId])
   @@index([month])
   @@index([status])
+  @@index([employeeId, month])
 }
 
 model Attendance {
@@ -394,6 +399,7 @@ model Leave {
   @@index([employeeId])
   @@index([status])
   @@index([startDate])
+  @@index([employeeId, status])
 }
 
 model AuditLog {

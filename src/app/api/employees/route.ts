@@ -28,21 +28,6 @@ export async function GET(request: NextRequest) {
       where.isActive = active === 'true';
     }
 
-    // Sorting
-    const validSortFields = ['createdAt', 'name', 'employeeCode', 'designation', 'department', 'baseSalary', 'isActive'];
-    const rawSortBy = searchParams.get('sortBy') || 'createdAt';
-    const sortBy = validSortFields.includes(rawSortBy) ? rawSortBy : 'createdAt';
-    const rawSortOrder = searchParams.get('sortOrder') || 'desc';
-    const sortOrder = rawSortOrder === 'asc' ? 'asc' : 'desc';
-
-    // Build orderBy — handle nested field "user.name"
-    let orderBy: any;
-    if (sortBy === 'name') {
-      orderBy = { user: { name: sortOrder } };
-    } else {
-      orderBy = { [sortBy]: sortOrder };
-    }
-
     const employees = await db.employee.findMany({
       where,
       include: {
@@ -50,7 +35,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, name: true, email: true, role: true, isActive: true },
         },
       },
-      orderBy,
+      orderBy: { createdAt: 'desc' },
     });
 
     return NextResponse.json({ employees });

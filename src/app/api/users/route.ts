@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission, hashPassword } from '@/lib/auth';
 import { db } from '@/lib/db';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await getSession();
     if (!session) {
@@ -12,18 +12,6 @@ export async function GET(request: NextRequest) {
     if (!checkPermission(session.role, 'MANAGE_USERS')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
-
-    const { searchParams } = new URL(request.url);
-
-    const validSortFields = ['createdAt', 'name', 'email', 'role', 'isActive'] as const;
-
-    const rawSortBy = searchParams.get('sortBy') ?? 'createdAt';
-    const sortBy = validSortFields.includes(rawSortBy as typeof validSortFields[number])
-      ? rawSortBy
-      : 'createdAt';
-
-    const rawSortOrder = searchParams.get('sortOrder') ?? 'desc';
-    const sortOrder = rawSortOrder === 'asc' ? 'asc' : 'desc';
 
     const users = await db.user.findMany({
       select: {
@@ -35,7 +23,7 @@ export async function GET(request: NextRequest) {
         lastLogin: true,
         createdAt: true,
       },
-      orderBy: { [sortBy]: sortOrder },
+      orderBy: { createdAt: 'desc' },
     });
 
     return NextResponse.json({ users });

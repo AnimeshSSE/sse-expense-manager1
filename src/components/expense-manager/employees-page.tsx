@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
@@ -124,47 +124,12 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: s
   )
 }
 
-// ==================== Sort Helpers ====================
-
-function SortIcon({ field, sortField, sortDir }: { field: string; sortField: string; sortDir: string }) {
-  if (sortField !== field) return <span className="ml-1 opacity-25 text-[9px] leading-none select-none">▲▼</span>
-  return <span className="ml-1 text-foreground text-[9px] leading-none select-none">{sortDir === 'asc' ? '▲' : '▼'}</span>
-}
-
-function sortData<T>(items: T[], field: string, dir: string): T[] {
-  return [...items].sort((a: any, b: any) => {
-    let aVal = field.includes('.') ? field.split('.').reduce((o: any, k: string) => o?.[k], a) : a[field]
-    let bVal = field.includes('.') ? field.split('.').reduce((o: any, k: string) => o?.[k], b) : b[field]
-    if (aVal == null) aVal = ''
-    if (bVal == null) bVal = ''
-    if (typeof aVal === 'number' && typeof bVal === 'number') {
-      return dir === 'asc' ? aVal - bVal : bVal - aVal
-    }
-    return dir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal))
-  })
-}
-
-function useSortState(defaultField: string = 'createdAt', defaultDir: string = 'desc') {
-  const [sortField, setSortField] = useState(defaultField)
-  const [sortDir, setSortDir] = useState(defaultDir)
-  const handleSort = useCallback((field: string) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDir('asc')
-    }
-  }, [sortField])
-  return { sortField, sortDir, handleSort }
-}
-
 // ==================== Employees Tab ====================
 
 function EmployeesTab() {
   const { user } = useAuth()
   const { t } = useLanguage()
   const isAdmin = user?.role === 'ADMIN'
-  const canManageEmployees = isAdmin || user?.role === 'ACCOUNTANT'
 
   const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -189,33 +154,24 @@ function EmployeesTab() {
     bankAccount: '', bankName: '', bankIfsc: '', panNumber: '', aadhaarNumber: '',
   })
 
-  const { sortField, sortDir, handleSort } = useSortState('createdAt', 'desc')
-  const sortedEmployees = useMemo(() => sortData(employees, sortField, sortDir), [employees, sortField, sortDir])
-
   const loadEmployees = useCallback(async () => {
     setLoading(true)
     try {
-      if (canManageEmployees) {
-        const params: Record<string, string> = {}
-        if (search) params.search = search
-        if (designationFilter) params.designation = designationFilter
-        if (departmentFilter) params.department = departmentFilter
-        setEmployees(await api.getEmployees(params))
-      } else {
-        // Non-admin users can only see their own employee record
-        const emps = await api.getEmployees({ userId: user?.id || '' })
-        setEmployees(emps)
-      }
+      const params: Record<string, string> = {}
+      if (search) params.search = search
+      if (designationFilter) params.designation = designationFilter
+      if (departmentFilter) params.department = departmentFilter
+      setEmployees(await api.getEmployees(params))
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [search, designationFilter, departmentFilter, canManageEmployees, user?.id])
+  }, [search, designationFilter, departmentFilter])
 
   const loadUsers = useCallback(async () => {
     try { setUsers(await api.getUsers()) } catch { /* handled */ }
   }, [])
 
   useEffect(() => { loadEmployees() }, [loadEmployees])
-  useEffect(() => { if (canManageEmployees) loadUsers() }, [canManageEmployees, loadUsers])
+  useEffect(() => { if (isAdmin) loadUsers() }, [isAdmin, loadUsers])
 
   const handleCreate = async () => {
     if (!createForm.userId || !createForm.designation || !createForm.department || !createForm.baseSalary) {
@@ -303,35 +259,31 @@ function EmployeesTab() {
 
       {/* Actions & Filters */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        {canManageEmployees ? (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-1 w-full sm:w-auto">
-            <div className="relative flex-1 w-full sm:max-w-xs">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder={t('hr.searchEmployees')}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-9 text-sm pl-8"
-              />
-            </div>
-            <Select value={designationFilter} onValueChange={(v) => setDesignationFilter(v === '__all__' ? '' : v)}>
-              <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDesignations')} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">{t('hr.allDesignations')}</SelectItem>
-                {designations.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
-              </SelectContent>
-            </Select>
-            <Select value={departmentFilter} onValueChange={(v) => setDepartmentFilter(v === '__all__' ? '' : v)}>
-              <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDepartments')} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">{t('hr.allDepartments')}</SelectItem>
-                {departments.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
-              </SelectContent>
-            </Select>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-1 w-full sm:w-auto">
+          <div className="relative flex-1 w-full sm:max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder={t('hr.searchEmployees')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 text-sm pl-8"
+            />
           </div>
-        ) : (
-          <div />
-        )}
+          <Select value={designationFilter} onValueChange={(v) => setDesignationFilter(v === '__all__' ? '' : v)}>
+            <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDesignations')} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('hr.allDesignations')}</SelectItem>
+              {designations.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
+            </SelectContent>
+          </Select>
+          <Select value={departmentFilter} onValueChange={(v) => setDepartmentFilter(v === '__all__' ? '' : v)}>
+            <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDepartments')} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('hr.allDepartments')}</SelectItem>
+              {departments.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
+            </SelectContent>
+          </Select>
+        </div>
         {isAdmin && (
           <Button onClick={() => setCreateOpen(true)} className="bg-stone-900 hover:bg-stone-800 whitespace-nowrap">
             <Plus className="w-4 h-4 mr-2" />{t('hr.addEmployee')}
@@ -346,24 +298,23 @@ function EmployeesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employeeCode')}>{t('hr.employeeCode')}<SortIcon field="employeeCode" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('user.name')}>{t('col.title')}<SortIcon field="user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('designation')}>{t('hr.designation')}<SortIcon field="designation" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('department')}>{t('hr.department')}<SortIcon field="department" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.employeeCode')}</TableHead>
+                  <TableHead className="text-xs">{t('col.title')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.designation')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.department')}</TableHead>
                   <TableHead className="text-xs">{t('hr.phone')}</TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('baseSalary')}>{t('hr.baseSalary')}<SortIcon field="baseSalary" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('status')}>{t('hr.status')}<SortIcon field="status" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('createdAt')}>{t('hr.joiningDate')}<SortIcon field="createdAt" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.baseSalary')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
                   <TableHead className="text-xs text-right">{t('col.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <SkeletonRows cols={9} />
+                  <SkeletonRows cols={8} />
                 ) : employees.length === 0 ? (
                   <EmptyState icon={Users} message={t('hr.noEmployees')} />
                 ) : (
-                  sortedEmployees.map((emp: any) => (
+                  employees.map((emp: any) => (
                     <TableRow key={emp.id}>
                       <TableCell className="text-xs font-mono font-medium">{emp.employeeCode}</TableCell>
                       <TableCell className="text-xs font-medium">{emp.user?.name || '-'}</TableCell>
@@ -374,7 +325,6 @@ function EmployeesTab() {
                       <TableCell>
                         <Badge className={`text-[10px] ${statusColors[emp.status] || ''}`}>{emp.status}</Badge>
                       </TableCell>
-                      <TableCell className="text-xs">{emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString() : '-'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setSelected(emp); setViewOpen(true) }}>
@@ -623,39 +573,25 @@ function AttendanceTab() {
   const [statusFilter, setStatusFilter] = useState('')
   const [localAttendance, setLocalAttendance] = useState<Record<string, string>>({})
 
-  const { sortField, sortDir, handleSort } = useSortState('employeeCode', 'asc')
-
   const loadEmployees = useCallback(async () => {
-    try {
-      if (canManage) {
-        setEmployees(await api.getEmployees({ status: 'ACTIVE' }))
-      } else {
-        const emps = await api.getEmployees({ userId: user?.id || '' })
-        setEmployees(emps)
-      }
-    } catch { /* handled */ }
-  }, [canManage, user?.id])
+    try { setEmployees(await api.getEmployees({ status: 'ACTIVE' })) } catch { /* handled */ }
+  }, [])
 
   const loadAttendance = useCallback(async () => {
     setLoading(true)
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const data = await api.getAttendance({ date: dateStr })
-      const allAttendance = data.data
-      // Filter to only current user's records if not admin/accountant
-      const visibleAttendance = canManage
-        ? allAttendance
-        : allAttendance.filter((a: any) => a.employee?.userId === user?.id)
-      setAttendance(visibleAttendance)
+      setAttendance(data.data)
       // Build local state from loaded data
       const local: Record<string, string> = {}
-      visibleAttendance.forEach((a: any) => {
+      data.data.forEach((a: any) => {
         local[a.employeeId] = a.status
       })
       setLocalAttendance(local)
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [selectedDate, canManage, user?.id])
+  }, [selectedDate])
 
   useEffect(() => { loadEmployees() }, [loadEmployees])
   useEffect(() => { loadAttendance() }, [loadAttendance])
@@ -687,15 +623,6 @@ function AttendanceTab() {
   const filteredEmployees = statusFilter
     ? employees.filter((emp: any) => localAttendance[emp.id] === statusFilter)
     : employees
-
-  const displayEmployees = useMemo(() => {
-    return filteredEmployees.map(emp => ({
-      ...emp,
-      _sortStatus: localAttendance[emp.id] || 'PRESENT',
-      _sortHours: Number(attendance.find((a: any) => a.employeeId === emp.id)?.hoursWorked) || 0,
-    }))
-  }, [filteredEmployees, localAttendance, attendance])
-  const sortedEmployees = useMemo(() => sortData(displayEmployees, sortField, sortDir), [displayEmployees, sortField, sortDir])
 
   // Stats
   const presentCount = Object.values(localAttendance).filter((s) => s === 'PRESENT').length
@@ -760,13 +687,13 @@ function AttendanceTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employeeCode')}>{t('hr.employeeCode')}<SortIcon field="employeeCode" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('user.name')}>{t('col.title')}<SortIcon field="user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('designation')}>{t('hr.designation')}<SortIcon field="designation" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('_sortStatus')}>{t('hr.status')}<SortIcon field="_sortStatus" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.employeeCode')}</TableHead>
+                  <TableHead className="text-xs">{t('col.title')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.designation')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
                   <TableHead className="text-xs">{t('hr.checkIn')}</TableHead>
                   <TableHead className="text-xs">{t('hr.checkOut')}</TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('_sortHours')}>{t('hr.hoursWorked')}<SortIcon field="_sortHours" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.hoursWorked')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -775,7 +702,7 @@ function AttendanceTab() {
                 ) : filteredEmployees.length === 0 ? (
                   <EmptyState icon={CalendarDays} message={t('hr.noAttendance')} />
                 ) : (
-                  sortedEmployees.map((emp: any) => {
+                  filteredEmployees.map((emp: any) => {
                     const existingRecord = attendance.find((a: any) => a.employeeId === emp.id)
                     const currentStatus = localAttendance[emp.id] || 'PRESENT'
                     return (
@@ -837,24 +764,16 @@ function LeavesTab() {
 
   const [employees, setEmployees] = useState<any[]>([])
 
-  const { sortField, sortDir, handleSort } = useSortState('createdAt', 'desc')
-  const sortedLeaves = useMemo(() => sortData(leaves, sortField, sortDir), [leaves, sortField, sortDir])
-
   const loadLeaves = useCallback(async () => {
     setLoading(true)
     try {
       const params: Record<string, string> = {}
       if (statusFilter) params.status = statusFilter
       const data = await api.getLeaves(params)
-      const allLeaves = data.data
-      // Filter to only current user's records if not admin/accountant
-      const visibleLeaves = canApprove
-        ? allLeaves
-        : allLeaves.filter((l: any) => l.employee?.userId === user?.id)
-      setLeaves(visibleLeaves)
+      setLeaves(data.data)
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [statusFilter, canApprove, user?.id])
+  }, [statusFilter])
 
   const loadEmployees = useCallback(async () => {
     try {
@@ -862,7 +781,7 @@ function LeavesTab() {
       if (canApprove) {
         setEmployees(await api.getEmployees({ status: 'ACTIVE' }))
       } else {
-        const emps = await api.getEmployees({ userId: user?.id || '' })
+        const emps = await api.getEmployees({ userId: user?.id })
         setEmployees(emps)
         if (emps.length > 0) {
           setLeaveForm((f) => ({ ...f, employeeId: emps[0].id }))
@@ -976,13 +895,13 @@ function LeavesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employee.user.name')}>{t('hr.employee')}<SortIcon field="employee.user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('type')}>{t('hr.leaveType')}<SortIcon field="type" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('startDate')}>{t('hr.from')}<SortIcon field="startDate" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('endDate')}>{t('hr.to')}<SortIcon field="endDate" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('totalDays')}>{t('hr.days')}<SortIcon field="totalDays" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.employee')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.leaveType')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.from')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.to')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.days')}</TableHead>
                   <TableHead className="text-xs">{t('hr.reason')}</TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('status')}>{t('hr.status')}<SortIcon field="status" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
                   <TableHead className="text-xs text-right">{t('col.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -992,7 +911,7 @@ function LeavesTab() {
                 ) : leaves.length === 0 ? (
                   <EmptyState icon={CalendarDays} message={t('hr.noLeaves')} />
                 ) : (
-                  sortedLeaves.map((leave: any) => (
+                  leaves.map((leave: any) => (
                     <TableRow key={leave.id}>
                       <TableCell className="text-xs font-medium">{leave.employee?.user?.name || '-'}</TableCell>
                       <TableCell>
@@ -1130,22 +1049,14 @@ function SalariesTab() {
   const currentMonth = format(new Date(), 'yyyy-MM')
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
 
-  const { sortField, sortDir, handleSort } = useSortState('baseSalary', 'asc')
-  const sortedSalaries = useMemo(() => sortData(salaries, sortField, sortDir), [salaries, sortField, sortDir])
-
   const loadSalaries = useCallback(async () => {
     setLoading(true)
     try {
       const data = await api.getSalaries({ month: selectedMonth })
-      const allSalaries = data.data
-      // Filter to only current user's records if not admin/accountant
-      const visibleSalaries = canManage
-        ? allSalaries
-        : allSalaries.filter((s: any) => s.employee?.userId === user?.id)
-      setSalaries(visibleSalaries)
+      setSalaries(data.data)
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [selectedMonth, canManage, user?.id])
+  }, [selectedMonth])
 
   useEffect(() => { loadSalaries() }, [loadSalaries])
 
@@ -1208,9 +1119,9 @@ function SalariesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employee.employeeCode')}>{t('hr.employeeCode')}<SortIcon field="employee.employeeCode" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employee.user.name')}>{t('col.title')}<SortIcon field="employee.user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('baseSalary')}>{t('hr.baseSalary')}<SortIcon field="baseSalary" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.employeeCode')}</TableHead>
+                  <TableHead className="text-xs">{t('col.title')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.baseSalary')}</TableHead>
                   <TableHead className="text-xs">{t('hr.hra')}</TableHead>
                   <TableHead className="text-xs">{t('hr.da')}</TableHead>
                   <TableHead className="text-xs">{t('hr.ta')}</TableHead>
@@ -1218,8 +1129,8 @@ function SalariesTab() {
                   <TableHead className="text-xs">{t('hr.deductions')}</TableHead>
                   <TableHead className="text-xs">{t('hr.pf')}</TableHead>
                   <TableHead className="text-xs">{t('hr.tds')}</TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('netSalary')}>{t('hr.netSalary')}<SortIcon field="netSalary" sortField={sortField} sortDir={sortDir} /></TableHead>
-                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('status')}>{t('hr.status')}<SortIcon field="status" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs">{t('hr.netSalary')}</TableHead>
+                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
                   {isAdmin && <TableHead className="text-xs text-right">{t('col.actions')}</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -1229,7 +1140,7 @@ function SalariesTab() {
                 ) : salaries.length === 0 ? (
                   <EmptyState icon={Banknote} message={t('hr.noSalaries')} />
                 ) : (
-                  sortedSalaries.map((sal: any) => (
+                  salaries.map((sal: any) => (
                     <TableRow key={sal.id}>
                       <TableCell className="text-xs font-mono">{sal.employee?.employeeCode || '-'}</TableCell>
                       <TableCell className="text-xs font-medium">{sal.employee?.user?.name || '-'}</TableCell>
@@ -1286,13 +1197,10 @@ export function EmployeesPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
   const isAccountant = user?.role === 'ACCOUNTANT'
+  const isStockManager = user?.role === 'STOCK_MANAGER'
 
   // All authenticated users can see the page, but with different tab access
   const canSeeSalaries = isAdmin || isAccountant
-  const canManageEmployees = isAdmin || isAccountant
-
-  // Default tab: employees for managers, attendance for regular users
-  const defaultTab = canManageEmployees ? 'employees' : 'attendance'
 
   return (
     <div className="space-y-4">
@@ -1300,13 +1208,11 @@ export function EmployeesPage() {
         <h2 className="text-lg font-semibold text-stone-900">{t('hr.title')}</h2>
       </div>
 
-      <Tabs defaultValue={defaultTab}>
+      <Tabs defaultValue="employees">
         <TabsList className="flex-wrap h-auto gap-1">
-          {canManageEmployees && (
-            <TabsTrigger value="employees" className="text-xs">
-              <Users className="w-3.5 h-3.5 mr-1.5" />{t('hr.employees')}
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="employees" className="text-xs">
+            <Users className="w-3.5 h-3.5 mr-1.5" />{t('hr.employees')}
+          </TabsTrigger>
           <TabsTrigger value="attendance" className="text-xs">
             <CalendarDays className="w-3.5 h-3.5 mr-1.5" />{t('hr.attendance')}
           </TabsTrigger>
@@ -1320,11 +1226,9 @@ export function EmployeesPage() {
           )}
         </TabsList>
 
-        {canManageEmployees && (
-          <TabsContent value="employees" className="mt-4">
-            <EmployeesTab />
-          </TabsContent>
-        )}
+        <TabsContent value="employees" className="mt-4">
+          <EmployeesTab />
+        </TabsContent>
 
         <TabsContent value="attendance" className="mt-4">
           <AttendanceTab />

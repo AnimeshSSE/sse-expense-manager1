@@ -11,10 +11,10 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const siteId = searchParams.get('siteId');
+    const siteIds = searchParams.get('siteIds');
     const unit = searchParams.get('unit');
-    const minPrice = searchParams.get('minPrice');
-    const maxPrice = searchParams.get('maxPrice');
+    const priceFrom = searchParams.get('priceFrom');
+    const priceTo = searchParams.get('priceTo');
     const search = searchParams.get('search');
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') || 'desc';
@@ -24,26 +24,29 @@ export async function GET(request: NextRequest) {
     // Build where clause
     const where: Prisma.BOQItemWhereInput = {};
 
-    if (siteId) {
-      where.requisition = { siteId };
+    if (siteIds) {
+      const ids = siteIds.split(',').filter(Boolean);
+      if (ids.length > 0) {
+        where.requisition = { siteId: { in: ids } };
+      }
     }
 
     if (unit) {
       where.unit = unit;
     }
 
-    if (minPrice) {
-      where.unitPrice = { ...(where.unitPrice as any), gte: parseFloat(minPrice) };
+    if (priceFrom) {
+      where.unitPrice = { ...(where.unitPrice as any), gte: parseFloat(priceFrom) };
     }
-    if (maxPrice) {
-      where.unitPrice = { ...(where.unitPrice as any), lte: parseFloat(maxPrice) };
+    if (priceTo) {
+      where.unitPrice = { ...(where.unitPrice as any), lte: parseFloat(priceTo) };
     }
 
     if (search) {
       where.OR = [
-        { itemName: { contains: search } },
-        { description: { contains: search } },
-        { category: { contains: search } },
+        { itemName: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
       ];
     }
 

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/auth'
+import { ensureSeeded } from '@/lib/seed'
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureSeeded()
     const body = await request.json()
     const { email, password } = body
 

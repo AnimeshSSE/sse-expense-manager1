@@ -219,7 +219,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [data, setData] = useState<any>(null)
   const [clients, setClients] = useState<any[]>([])
   const [sites, setSites] = useState<any[]>([])
-  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   // Filters
@@ -230,17 +229,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   )
   const [selectedUserId, setSelectedUserId] = useState<string>('all')
 
-  // Late submissions state
-  const [lateSubmissions, setLateSubmissions] = useState<any>(null)
-  const [lateLoading, setLateLoading] = useState(true)
-
-  // Reports data for site breakdown + pie chart
+  // Reports data for site breakdown + pie chart (includes late submissions)
   const [reportsData, setReportsData] = useState<any>(null)
   const [reportsLoading, setReportsLoading] = useState(true)
-
-  // Advances stats
-  const [advanceStats, setAdvanceStats] = useState<{ totalApproved: number; pendingCount: number; totalPaid: number } | null>(null)
-  const [advanceLoading, setAdvanceLoading] = useState(true)
 
   // User balances
   const [userBalances, setUserBalances] = useState<any[]>([])
@@ -249,9 +240,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   // All users for selectors
   const [allUsers, setAllUsers] = useState<any[]>([])
 
-  // Employee filter for dashboard (separate from user selector for balances)
-  const [selectedEmployee, setSelectedEmployee] = useState('all')
-
+  // useEffect 1: Main dashboard + clients + sites + users (in parallel)
   useEffect(() => {
     async function load() {
       setLoading(true)
@@ -263,14 +252,18 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         if (selectedSite !== 'all') params.siteId = selectedSite
         if (selectedMonth) params.month = selectedMonth
 
-        const [dashboardData, clientsData, sitesData] = await Promise.all([
+        const results = await Promise.all([
           api.getDashboard(Object.keys(params).length > 0 ? params : undefined),
           api.getClients(),
           api.getSites(),
+          ...((isAdmin || isAccountant) ? [api.getUsers()] : [Promise.resolve([])]),
         ])
-        setData(dashboardData)
-        setClients(clientsData || [])
-        setSites(sitesData || [])
+        setData(results[0])
+        setClients(results[1] || [])
+        setSites(results[2] || [])
+        if (isAdmin || isAccountant) {
+          setAllUsers(results[3] || [])
+        }
       } catch {
         // handled by api
       } finally {
@@ -278,117 +271,46 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       }
     }
     load()
-  }, [selectedUserId, selectedClient, selectedSite, selectedMonth])
+  }, [selectedUserId, selectedClient, selectedSite, selectedMonth, isAdmin, isAccountant])
 
+  // useEffect 2: Reports (site breakdown chart) + User balances (admin/accountant only) — parallel batch
   useEffect(() => {
-    async function loadStats() {
-      const params: Record<string, string> = { month: selectedMonth }
-      if (selectedClient !== 'all') params.clientId = selectedClient
-      if (selectedSite !== 'all') params.siteId = selectedSite
-      const activeUserId = selectedUserId !== 'all' ? selectedUserId : ''
-      if (activeUserId) params.userId = activeUserId
-      try {
-        const result = await api.getExpenseStats(params)
-        setStats(result)
-      } catch {
-        // handled by api
-      }
-    }
-    loadStats()
-  }, [selectedClient, selectedSite, selectedMonth, selectedUserId, selectedEmployee])
-
-  useEffect(() => {
-    async function loadLate() {
-      setLateLoading(true)
-      try {
-        const result = await api.getLateSubmissions({ months: '6' })
-        setLateSubmissions(result)
-      } catch {
-        // handled by api
-      } finally {
-        setLateLoading(false)
-      }
-    }
-    loadLate()
-  }, [])
-
-  // Fetch reports data for site breakdown + pie chart on dashboard
-  useEffect(() => {
-    async function loadReports() {
+    async function loadSecondary() {
       setReportsLoading(true)
+      setBalancesLoading(true)
       try {
-        const params: Record<string, string> = { period: 'monthly' }
-        if (selectedClient !== 'all') params.clientId = selectedClient
-        if (selectedSite !== 'all') params.siteId = selectedSite
+        const reportParams: Record<string, string> = { period: 'monthly' }
+        if (selectedClient !== 'all') reportParams.clientId = selectedClient
+        if (selectedSite !== 'all') reportParams.siteId = selectedSite
         const activeUserId = selectedUserId !== 'all' ? selectedUserId : ''
-        if (activeUserId) params.userId = activeUserId
-        const result = await api.getReports(params)
-        setReportsData(result)
+        if (activeUserId) reportParams.userId = activeUserId
+
+        const promises: Promise<any>[] = [
+          api.getReports(reportParams),
+        ]
+        if (isAdmin || isAccountant) {
+          const balanceParams: Record<string, string> = {}
+          if (selectedClient !== 'all') balanceParams.clientId = selectedClient
+          if (selectedSite !== 'all') balanceParams.siteId = selectedSite
+          if (selectedMonth) balanceParams.month = selectedMonth
+          if (activeUserId) balanceParams.userId = activeUserId
+          promises.push(api.getUserBalances(balanceParams))
+        }
+
+        const results = await Promise.all(promises)
+        setReportsData(results[0])
+        if ((isAdmin || isAccountant) && results[1]) {
+          setUserBalances(results[1] as any[])
+        }
       } catch {
         // handled by api
       } finally {
         setReportsLoading(false)
+        setBalancesLoading(false)
       }
     }
-    loadReports()
-  }, [selectedClient, selectedSite, selectedUserId])
-
-  // Fetch advance stats
-  useEffect(() => {
-    async function loadAdvances() {
-      setAdvanceLoading(true)
-      try {
-        const params: Record<string, string> = { status: 'PENDING,PAID', limit: '200' }
-        const activeUserId = selectedUserId !== 'all' ? selectedUserId : ''
-        if (activeUserId) params.userId = activeUserId
-        if (selectedClient !== 'all') params.clientId = selectedClient
-        if (selectedSite !== 'all') params.siteId = selectedSite
-        const result = await api.getAdvances(params)
-        const advances = result.data || []
-        const totalPaid = advances
-          .filter((a: any) => a.status === 'PAID')
-          .reduce((sum: number, a: any) => sum + (a.amount || 0), 0)
-        const pendingCount = advances.filter((a: any) => a.status === 'PENDING').length
-        setAdvanceStats({ totalApproved: totalPaid, pendingCount, totalPaid })
-      } catch {
-        // handled by api
-      } finally {
-        setAdvanceLoading(false)
-      }
-    }
-    loadAdvances()
-  }, [selectedUserId, selectedClient, selectedSite])
-
-  // Fetch user balances for admin/accountant
-  useEffect(() => {
-    if (isAdmin || isAccountant) {
-      async function loadBalances() {
-        setBalancesLoading(true)
-        try {
-          const params: Record<string, string> = {}
-          if (selectedClient !== 'all') params.clientId = selectedClient
-          if (selectedSite !== 'all') params.siteId = selectedSite
-          if (selectedMonth) params.month = selectedMonth
-          const activeUserId = selectedUserId !== 'all' ? selectedUserId : ''
-          if (activeUserId) params.userId = activeUserId
-          const balances = await api.getUserBalances(params)
-          setUserBalances(balances)
-        } catch {
-          // handled
-        } finally {
-          setBalancesLoading(false)
-        }
-      }
-      loadBalances()
-    }
+    loadSecondary()
   }, [isAdmin, isAccountant, selectedUserId, selectedClient, selectedSite, selectedMonth])
-
-  // Fetch all users for admin/accountant
-  useEffect(() => {
-    if (isAdmin || isAccountant) {
-      api.getUsers().then((users) => setAllUsers(users || [])).catch(() => {})
-    }
-  }, [isAdmin, isAccountant])
 
   const filteredSites = selectedClient === 'all'
     ? sites
@@ -500,7 +422,6 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                     setSelectedSite('all')
                     setSelectedUserId('all')
                     setSelectedMonth(new Date().toISOString().slice(0, 7))
-                    setSelectedEmployee('all')
                   }}
                 >
                   Clear All
@@ -740,7 +661,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <StatCard
             title="My Advances (Paid)"
-            value={advanceLoading ? '...' : `₹ ${(advanceStats?.totalPaid || 0).toLocaleString()}`}
+            value={loading ? '...' : `₹ ${(d.advanceStats?.totalPaid || 0).toLocaleString()}`}
             icon={<Banknote className="w-4 h-4 text-violet-600" />}
             color="bg-violet-50"
             subtitle="Total disbursed"
@@ -749,7 +670,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           />
           <StatCard
             title="Pending Advances"
-            value={advanceLoading ? '...' : advanceStats?.pendingCount || 0}
+            value={loading ? '...' : d.advanceStats?.pendingCount || 0}
             icon={<Clock className="w-4 h-4 text-amber-600" />}
             color="bg-amber-50"
             subtitle="Awaiting approval"
@@ -761,7 +682,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard
             title="Total Advances (Paid)"
-            value={advanceLoading ? '...' : `₹ ${(advanceStats?.totalPaid || 0).toLocaleString()}`}
+            value={loading ? '...' : `₹ ${(d.advanceStats?.totalPaid || 0).toLocaleString()}`}
             icon={<Banknote className="w-4 h-4 text-violet-600" />}
             color="bg-violet-50"
             subtitle="Disbursed amount"
@@ -770,7 +691,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           />
           <StatCard
             title="Pending Advances"
-            value={advanceLoading ? '...' : advanceStats?.pendingCount || 0}
+            value={loading ? '...' : d.advanceStats?.pendingCount || 0}
             icon={<Clock className="w-4 h-4 text-amber-600" />}
             color="bg-amber-50"
             subtitle="Awaiting approval"
@@ -780,13 +701,13 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           <StatCard
             title="Net Balance (Advances - Expenses)"
             value={(() => {
-              const totalAdv = advanceStats?.totalPaid || 0
+              const totalAdv = d.advanceStats?.totalPaid || 0
               const totalExp = (d.thisMonthExpenses?.total || 0)
               const balance = totalAdv - totalExp
               return `₹ ${balance.toLocaleString()}`
             })()}
             icon={<Wallet className="w-4 h-4 text-stone-600" />}
-            color={`${(advanceStats?.totalPaid || 0) - (d.thisMonthExpenses?.total || 0) >= 0 ? 'bg-green-50' : 'bg-red-50'}`}
+            color={`${(d.advanceStats?.totalPaid || 0) - (d.thisMonthExpenses?.total || 0) >= 0 ? 'bg-green-50' : 'bg-red-50'}`}
             subtitle={`${selectedMonth ? new Date(selectedMonth + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'This Month'}: Advances Paid − Expenses`}
             onClick={() => onNavigate('advances')}
             clickable
@@ -901,71 +822,74 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       )}
 
       {/* ===== Monthly Late Submissions — Admin/Accountant only ===== */}
-      {(isAdmin || isAccountant) && (
-        <Card className="shadow-sm border-amber-200">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-amber-50">
-                  <AlertTriangle className="w-4 h-4 text-amber-600" />
-                </div>
-                <CardTitle className="text-sm font-medium">Monthly Late Submissions</CardTitle>
-              </div>
-              <span className="text-xs text-stone-400">Last 6 months</span>
-            </div>
-          </CardHeader>
-          <CardContent className="pb-4">
-            {lateLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-32 w-full" />
-              </div>
-            ) : lateSubmissions?.monthlyBreakdown && lateSubmissions.monthlyBreakdown.length > 0 ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-amber-50 rounded-lg">
-                    <p className="text-xs text-stone-500">Total Late Submissions</p>
-                    <p className="text-xl font-bold text-stone-900">{lateSubmissions.total || 0}</p>
+      {(isAdmin || isAccountant) && (() => {
+        const lateSubmissions = d.lateSubmissions
+        return (
+          <Card className="shadow-sm border-amber-200">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-amber-50">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
                   </div>
-                  <div className="p-3 bg-amber-50 rounded-lg">
-                    <p className="text-xs text-stone-500">Total Late Amount</p>
-                    <p className="text-xl font-bold text-stone-900">₹ {(lateSubmissions.totalAmount || 0).toLocaleString()}</p>
-                  </div>
+                  <CardTitle className="text-sm font-medium">Monthly Late Submissions</CardTitle>
                 </div>
-                <div className="overflow-x-auto max-h-48 overflow-y-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Month</TableHead>
-                        <TableHead className="text-xs text-center">Count</TableHead>
-                        <TableHead className="text-xs text-center">Avg Days Late</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {lateSubmissions.monthlyBreakdown.map((m: any, i: number) => (
-                        <TableRow key={i}>
-                          <TableCell className="text-xs font-medium">{m.month ? new Date(m.month + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'short' }) : '-'}</TableCell>
-                          <TableCell className="text-xs text-center">{m.count || 0}</TableCell>
-                          <TableCell className="text-xs text-center">
-                            <Badge className={`text-[10px] ${m.avgDaysLate > 3 ? 'bg-red-100 text-red-800' : m.avgDaysLate > 1 ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
-                              {m.avgDaysLate || 0} days
-                            </Badge>
-                          </TableCell>
+                <span className="text-xs text-stone-400">Last 6 months</span>
+              </div>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              ) : lateSubmissions?.monthlyBreakdown && lateSubmissions.monthlyBreakdown.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-amber-50 rounded-lg">
+                      <p className="text-xs text-stone-500">Total Late Submissions</p>
+                      <p className="text-xl font-bold text-stone-900">{lateSubmissions.total || 0}</p>
+                    </div>
+                    <div className="p-3 bg-amber-50 rounded-lg">
+                      <p className="text-xs text-stone-500">Total Late Amount</p>
+                      <p className="text-xl font-bold text-stone-900">₹ {(lateSubmissions.totalAmount || 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto max-h-48 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Month</TableHead>
+                          <TableHead className="text-xs text-center">Count</TableHead>
+                          <TableHead className="text-xs text-center">Avg Days Late</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {lateSubmissions.monthlyBreakdown.map((m: any, i: number) => (
+                          <TableRow key={i}>
+                            <TableCell className="text-xs font-medium">{m.month ? new Date(m.month + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'short' }) : '-'}</TableCell>
+                            <TableCell className="text-xs text-center">{m.count || 0}</TableCell>
+                            <TableCell className="text-xs text-center">
+                              <Badge className={`text-[10px] ${m.avgDaysLate > 3 ? 'bg-red-100 text-red-800' : m.avgDaysLate > 1 ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
+                                {m.avgDaysLate || 0} days
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-[100px] text-stone-400 text-sm">
-                <AlertCircle className="w-4 h-4 mr-2" />
-                No late submissions in the last 6 months
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              ) : (
+                <div className="flex items-center justify-center h-[100px] text-stone-400 text-sm">
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  No late submissions in the last 6 months
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       {/* ===== Workflow diagrams — Admin only ===== */}
       {isAdmin && <WorkflowDiagram />}
@@ -986,9 +910,9 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             </div>
           </CardHeader>
           <CardContent className="pb-4">
-            {stats?.categoryBreakdown && stats.categoryBreakdown.length > 0 ? (
+            {d.expenseStats?.categoryBreakdown && d.expenseStats.categoryBreakdown.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={stats.categoryBreakdown} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                <BarChart data={d.expenseStats.categoryBreakdown} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f4" />
                   <XAxis dataKey="category" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
@@ -997,7 +921,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                     contentStyle={{ borderRadius: '8px', border: '1px solid #e7e5e4', fontSize: '12px' }}
                   />
                   <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                    {stats.categoryBreakdown.map((_: any, index: number) => (
+                    {d.expenseStats.categoryBreakdown.map((_: any, index: number) => (
                       <Cell key={index} fill={chartColors[index % chartColors.length]} />
                     ))}
                   </Bar>
@@ -1021,11 +945,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
-            {stats?.categoryBreakdown && stats.categoryBreakdown.length > 0 ? (
+            {d.expenseStats?.categoryBreakdown && d.expenseStats.categoryBreakdown.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={stats.categoryBreakdown}
+                    data={d.expenseStats.categoryBreakdown}
                     dataKey="total"
                     nameKey="category"
                     cx="50%"
@@ -1038,7 +962,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                     }
                     labelLine={{ stroke: '#a8a29e', strokeWidth: 1 }}
                   >
-                    {stats.categoryBreakdown.map((_: any, index: number) => (
+                    {d.expenseStats.categoryBreakdown.map((_: any, index: number) => (
                       <Cell key={index} fill={chartColors[index % chartColors.length]} />
                     ))}
                   </Pie>

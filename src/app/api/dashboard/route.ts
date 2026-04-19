@@ -76,6 +76,44 @@ export async function GET(request: NextRequest) {
       createdAt: { gte: dateFrom || startOfMonth, lte: dateTo || endOfMonth },
     };
 
+    // Build advance where clause (mirrors frontend getAdvances logic)
+    const advanceWhere: Prisma.AdvanceWhereInput = {
+      status: { in: ['PENDING', 'PAID'] },
+    };
+    if (viewAsUserId && checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+      advanceWhere.userId = viewAsUserId;
+    } else if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+      advanceWhere.userId = session.id;
+    }
+    if (clientId) {
+      advanceWhere.site = { clientId };
+    }
+    if (siteId) {
+      advanceWhere.siteId = siteId;
+    }
+
+    // Expense stats: category breakdown for the filtered month
+    const expenseStatsWhere: Prisma.ExpenseWhereInput = {
+      ...thisMonthExpenseWhere,
+    };
+
+    // Late submissions: last 6 months
+    const lateStartDate = new Date();
+    lateStartDate.setMonth(lateStartDate.getMonth() - 6);
+    lateStartDate.setDate(1);
+
+    const lateWhere: Prisma.ExpenseWhereInput = {
+      isLateSubmission: true,
+      createdAt: { gte: lateStartDate },
+    };
+    if (viewAsUserId && checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+      lateWhere.userId = viewAsUserId;
+    } else if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+      lateWhere.userId = session.id;
+    }
+    if (clientId) lateWhere.site = { clientId };
+    if (siteId) lateWhere.siteId = siteId;
+
     const [
       thisMonthExpenses,
       pendingExpenses,
@@ -88,6 +126,11 @@ export async function GET(request: NextRequest) {
       thisMonthMirs,
       recentExpenses,
       recentMirs,
+      expensesByCategory,
+      advancePaidAgg,
+      advancePendingAgg,
+      advancePendingTotalAgg,
+      lateExpenses,
     ] = await Promise.all([
       db.expense.aggregate({
         where: thisMonthExpenseWhere,
@@ -153,7 +196,89 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
         take: 5,
       }),
+      // Expense stats: category breakdown
+      db.expense.groupBy({
+        by: ['categoryId'],
+        where: expenseStatsWhere,
+        _sum: { amount: true },
+        _count: { id: true },
+        orderBy: { _sum: { amount: 'desc' } },
+      }),
+      // Advance stats: total paid amount
+      db.advance.aggregate({
+        where: { ...advanceWhere, status: 'PAID' },
+        _sum: { amount: true },
+      }),
+      // Advance stats: pending count
+      db.advance.count({
+        where: { ...advanceWhere, status: 'PENDING' },
+      }),
+      // Advance stats: pending total amount
+      db.advance.aggregate({
+        where: { ...advanceWhere, status: 'PENDING' },
+        _sum: { amount: true },
+      }),
+      // Late submissions (last 6 months)
+      db.expense.findMany({
+        where: lateWhere,
+        include: {
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
+
+    // Build category breakdown with names
+    const categoryIds = expensesByCategory.map((e) => e.categoryId);
+    const categories = categoryIds.length > 0
+      ? await db.category.findMany({
+          where: { id: { in: categoryIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const categoryMap = new Map(categories.map((c) => [c.id, c.name]));
+    const categoryBreakdown = expensesByCategory.map((item) => ({
+      category: categoryMap.get(item.categoryId) || 'Unknown',
+      total: item._sum.amount || 0,
+      count: item._count.id,
+    }));
+
+    // Build late submissions monthly breakdown
+    const monthlyLateData: Record<string, { count: number; totalAmount: number; totalDaysLate: number }> = {};
+    for (const exp of lateExpenses) {
+      const monthKey = exp.expenseDate.toISOString().slice(0, 7);
+      if (!monthlyLateData[monthKey]) {
+        monthlyLateData[monthKey] = { count: 0, totalAmount: 0, totalDaysLate: 0 };
+      }
+      monthlyLateData[monthKey].count++;
+      monthlyLateData[monthKey].totalAmount += exp.amount;
+      monthlyLateData[monthKey].totalDaysLate += exp.daysLate || 0;
+    }
+
+    const lateMonthlyBreakdown = Object.entries(monthlyLateData)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, data]) => ({
+        month,
+        count: data.count,
+        totalAmount: data.totalAmount,
+        avgDaysLate: Math.round(data.totalDaysLate / data.count),
+      }));
+
+    // Per-user breakdown for top offenders
+    const lateUserBreakdown: Record<string, { name: string; count: number; totalAmount: number; totalDaysLate: number }> = {};
+    for (const exp of lateExpenses) {
+      const uid = exp.userId;
+      if (!lateUserBreakdown[uid]) {
+        lateUserBreakdown[uid] = { name: exp.user?.name || 'Unknown', count: 0, totalAmount: 0, totalDaysLate: 0 };
+      }
+      lateUserBreakdown[uid].count++;
+      lateUserBreakdown[uid].totalAmount += exp.amount;
+      lateUserBreakdown[uid].totalDaysLate += exp.daysLate || 0;
+    }
+
+    const lateTopOffenders = Object.values(lateUserBreakdown)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
 
     return NextResponse.json({
       thisMonthExpenses: {
@@ -194,6 +319,24 @@ export async function GET(request: NextRequest) {
       },
       recentExpenses,
       recentMirs,
+      // Combined expense stats (previously /api/dashboard/expense-stats)
+      expenseStats: {
+        categoryBreakdown,
+        totalAmount: categoryBreakdown.reduce((sum, item) => sum + item.total, 0),
+      },
+      // Combined advance stats (previously fetched via /api/advances + client-side aggregation)
+      advanceStats: {
+        totalPaid: advancePaidAgg._sum.amount || 0,
+        pendingCount: advancePendingAgg,
+        pendingTotal: advancePendingTotalAgg._sum.amount || 0,
+      },
+      // Combined late submissions (previously /api/dashboard/late-submissions)
+      lateSubmissions: {
+        total: lateExpenses.length,
+        totalAmount: lateExpenses.reduce((sum, e) => sum + e.amount, 0),
+        monthlyBreakdown: lateMonthlyBreakdown,
+        topOffenders: lateTopOffenders,
+      },
     });
   } catch (error: any) {
     console.error('Dashboard error:', error);

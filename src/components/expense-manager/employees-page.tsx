@@ -164,6 +164,7 @@ function EmployeesTab() {
   const { user } = useAuth()
   const { t } = useLanguage()
   const isAdmin = user?.role === 'ADMIN'
+  const canManageEmployees = isAdmin || user?.role === 'ACCOUNTANT'
 
   const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -194,21 +195,27 @@ function EmployeesTab() {
   const loadEmployees = useCallback(async () => {
     setLoading(true)
     try {
-      const params: Record<string, string> = {}
-      if (search) params.search = search
-      if (designationFilter) params.designation = designationFilter
-      if (departmentFilter) params.department = departmentFilter
-      setEmployees(await api.getEmployees(params))
+      if (canManageEmployees) {
+        const params: Record<string, string> = {}
+        if (search) params.search = search
+        if (designationFilter) params.designation = designationFilter
+        if (departmentFilter) params.department = departmentFilter
+        setEmployees(await api.getEmployees(params))
+      } else {
+        // Non-admin users can only see their own employee record
+        const emps = await api.getEmployees({ userId: user?.id || '' })
+        setEmployees(emps)
+      }
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [search, designationFilter, departmentFilter])
+  }, [search, designationFilter, departmentFilter, canManageEmployees, user?.id])
 
   const loadUsers = useCallback(async () => {
     try { setUsers(await api.getUsers()) } catch { /* handled */ }
   }, [])
 
   useEffect(() => { loadEmployees() }, [loadEmployees])
-  useEffect(() => { if (isAdmin) loadUsers() }, [isAdmin, loadUsers])
+  useEffect(() => { if (canManageEmployees) loadUsers() }, [canManageEmployees, loadUsers])
 
   const handleCreate = async () => {
     if (!createForm.userId || !createForm.designation || !createForm.department || !createForm.baseSalary) {
@@ -296,31 +303,35 @@ function EmployeesTab() {
 
       {/* Actions & Filters */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-1 w-full sm:w-auto">
-          <div className="relative flex-1 w-full sm:max-w-xs">
-            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder={t('hr.searchEmployees')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 text-sm pl-8"
-            />
+        {canManageEmployees ? (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-1 w-full sm:w-auto">
+            <div className="relative flex-1 w-full sm:max-w-xs">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder={t('hr.searchEmployees')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 text-sm pl-8"
+              />
+            </div>
+            <Select value={designationFilter} onValueChange={(v) => setDesignationFilter(v === '__all__' ? '' : v)}>
+              <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDesignations')} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{t('hr.allDesignations')}</SelectItem>
+                {designations.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
+              </SelectContent>
+            </Select>
+            <Select value={departmentFilter} onValueChange={(v) => setDepartmentFilter(v === '__all__' ? '' : v)}>
+              <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDepartments')} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">{t('hr.allDepartments')}</SelectItem>
+                {departments.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={designationFilter} onValueChange={(v) => setDesignationFilter(v === '__all__' ? '' : v)}>
-            <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDesignations')} /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">{t('hr.allDesignations')}</SelectItem>
-              {designations.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
-            </SelectContent>
-          </Select>
-          <Select value={departmentFilter} onValueChange={(v) => setDepartmentFilter(v === '__all__' ? '' : v)}>
-            <SelectTrigger className="h-9 text-sm w-full sm:w-40"><SelectValue placeholder={t('hr.allDepartments')} /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">{t('hr.allDepartments')}</SelectItem>
-              {departments.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
-            </SelectContent>
-          </Select>
-        </div>
+        ) : (
+          <div />
+        )}
         {isAdmin && (
           <Button onClick={() => setCreateOpen(true)} className="bg-stone-900 hover:bg-stone-800 whitespace-nowrap">
             <Plus className="w-4 h-4 mr-2" />{t('hr.addEmployee')}
@@ -615,24 +626,36 @@ function AttendanceTab() {
   const { sortField, sortDir, handleSort } = useSortState('employeeCode', 'asc')
 
   const loadEmployees = useCallback(async () => {
-    try { setEmployees(await api.getEmployees({ status: 'ACTIVE' })) } catch { /* handled */ }
-  }, [])
+    try {
+      if (canManage) {
+        setEmployees(await api.getEmployees({ status: 'ACTIVE' }))
+      } else {
+        const emps = await api.getEmployees({ userId: user?.id || '' })
+        setEmployees(emps)
+      }
+    } catch { /* handled */ }
+  }, [canManage, user?.id])
 
   const loadAttendance = useCallback(async () => {
     setLoading(true)
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const data = await api.getAttendance({ date: dateStr })
-      setAttendance(data.data)
+      const allAttendance = data.data
+      // Filter to only current user's records if not admin/accountant
+      const visibleAttendance = canManage
+        ? allAttendance
+        : allAttendance.filter((a: any) => a.employee?.userId === user?.id)
+      setAttendance(visibleAttendance)
       // Build local state from loaded data
       const local: Record<string, string> = {}
-      data.data.forEach((a: any) => {
+      visibleAttendance.forEach((a: any) => {
         local[a.employeeId] = a.status
       })
       setLocalAttendance(local)
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [selectedDate])
+  }, [selectedDate, canManage, user?.id])
 
   useEffect(() => { loadEmployees() }, [loadEmployees])
   useEffect(() => { loadAttendance() }, [loadAttendance])
@@ -823,10 +846,15 @@ function LeavesTab() {
       const params: Record<string, string> = {}
       if (statusFilter) params.status = statusFilter
       const data = await api.getLeaves(params)
-      setLeaves(data.data)
+      const allLeaves = data.data
+      // Filter to only current user's records if not admin/accountant
+      const visibleLeaves = canApprove
+        ? allLeaves
+        : allLeaves.filter((l: any) => l.employee?.userId === user?.id)
+      setLeaves(visibleLeaves)
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [statusFilter])
+  }, [statusFilter, canApprove, user?.id])
 
   const loadEmployees = useCallback(async () => {
     try {
@@ -1109,10 +1137,15 @@ function SalariesTab() {
     setLoading(true)
     try {
       const data = await api.getSalaries({ month: selectedMonth })
-      setSalaries(data.data)
+      const allSalaries = data.data
+      // Filter to only current user's records if not admin/accountant
+      const visibleSalaries = canManage
+        ? allSalaries
+        : allSalaries.filter((s: any) => s.employee?.userId === user?.id)
+      setSalaries(visibleSalaries)
     } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [selectedMonth])
+  }, [selectedMonth, canManage, user?.id])
 
   useEffect(() => { loadSalaries() }, [loadSalaries])
 
@@ -1253,10 +1286,13 @@ export function EmployeesPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'ADMIN'
   const isAccountant = user?.role === 'ACCOUNTANT'
-  const isStockManager = user?.role === 'STOCK_MANAGER'
 
   // All authenticated users can see the page, but with different tab access
   const canSeeSalaries = isAdmin || isAccountant
+  const canManageEmployees = isAdmin || isAccountant
+
+  // Default tab: employees for managers, attendance for regular users
+  const defaultTab = canManageEmployees ? 'employees' : 'attendance'
 
   return (
     <div className="space-y-4">
@@ -1264,11 +1300,13 @@ export function EmployeesPage() {
         <h2 className="text-lg font-semibold text-stone-900">{t('hr.title')}</h2>
       </div>
 
-      <Tabs defaultValue="employees">
+      <Tabs defaultValue={defaultTab}>
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="employees" className="text-xs">
-            <Users className="w-3.5 h-3.5 mr-1.5" />{t('hr.employees')}
-          </TabsTrigger>
+          {canManageEmployees && (
+            <TabsTrigger value="employees" className="text-xs">
+              <Users className="w-3.5 h-3.5 mr-1.5" />{t('hr.employees')}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="attendance" className="text-xs">
             <CalendarDays className="w-3.5 h-3.5 mr-1.5" />{t('hr.attendance')}
           </TabsTrigger>
@@ -1282,9 +1320,11 @@ export function EmployeesPage() {
           )}
         </TabsList>
 
-        <TabsContent value="employees" className="mt-4">
-          <EmployeesTab />
-        </TabsContent>
+        {canManageEmployees && (
+          <TabsContent value="employees" className="mt-4">
+            <EmployeesTab />
+          </TabsContent>
+        )}
 
         <TabsContent value="attendance" className="mt-4">
           <AttendanceTab />

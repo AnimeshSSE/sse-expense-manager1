@@ -55,15 +55,27 @@ export async function GET(request: NextRequest) {
     }
     if (search) {
       where.OR = [
-        { purpose: { contains: search, mode: 'insensitive' } },
-        { notes: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
-        { site: { name: { contains: search, mode: 'insensitive' } } },
+        { purpose: { contains: search } },
+        { notes: { contains: search } },
+        { user: { name: { contains: search } } },
+        { site: { name: { contains: search } } },
       ];
     }
 
-    const validSortFields = ['createdAt', 'amount', 'status', 'updatedAt'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const validSortFields = ['createdAt', 'updatedAt', 'amount', 'status', 'purpose'];
+
+    // Handle nested relation sorts
+    let orderBy: Prisma.AdvanceOrderByWithRelationInput;
+    const order = sortOrder === 'asc' ? 'asc' : 'desc';
+
+    if (sortBy === 'site.name') {
+      orderBy = { site: { name: order } };
+    } else if (sortBy === 'user.name') {
+      orderBy = { user: { name: order } };
+    } else {
+      const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+      orderBy = { [sortField]: order };
+    }
 
     const [advances, total] = await Promise.all([
       db.advance.findMany({
@@ -75,7 +87,7 @@ export async function GET(request: NextRequest) {
           adminApprovedBy: { select: { id: true, name: true } },
           paidBy: { select: { id: true, name: true } },
         },
-        orderBy: { [sortField]: sortOrder === 'asc' ? 'asc' : 'desc' },
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

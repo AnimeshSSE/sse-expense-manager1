@@ -60,18 +60,27 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { title: { contains: search } },
+        { description: { contains: search } },
+        { user: { name: { contains: search } } },
       ];
     }
 
     // Build orderBy
     const validSortFields = ['createdAt', 'requiredDate', 'totalAmount', 'status', 'priority', 'updatedAt', 'title'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-    const orderBy: Prisma.RequisitionOrderByWithRelationInput = {
-      [sortField]: sortOrder === 'asc' ? 'asc' : 'desc',
+    const direction = sortOrder === 'asc' ? 'asc' : 'desc';
+    const nestedSortMap: Record<string, Prisma.RequisitionOrderByWithRelationInput> = {
+      'site.name': { site: { name: direction } },
+      'user.name': { user: { name: direction } },
     };
+
+    let orderBy: Prisma.RequisitionOrderByWithRelationInput;
+    if (nestedSortMap[sortBy]) {
+      orderBy = nestedSortMap[sortBy];
+    } else {
+      const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+      orderBy = { [sortField]: direction };
+    }
 
     const [requisitions, total] = await Promise.all([
       db.requisition.findMany({

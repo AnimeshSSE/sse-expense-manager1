@@ -24,9 +24,14 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Plus, Pencil, Trash2, Loader2, Users } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Users, AlertTriangle } from 'lucide-react'
 
 const ROLES = ['ADMIN', 'ACCOUNTANT', 'STOCK_MANAGER', 'USER']
+
+const SortIcon = ({ field, sortField, sortDir }: { field: string; sortField: string; sortDir: string }) => {
+  if (field !== sortField) return <span className="ml-1 opacity-20 text-[10px]">▲▼</span>
+  return <span className="ml-1 text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
+}
 
 const roleColors: Record<string, string> = {
   ADMIN: 'bg-red-100 text-red-800',
@@ -42,17 +47,30 @@ export function UsersPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
   const [selected, setSelected] = useState<any>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
   const [createForm, setCreateForm] = useState({ name: '', email: '', password: '', role: 'USER' })
   const [editForm, setEditForm] = useState({ name: '', role: 'USER', isActive: true })
+  const [sortField, setSortField] = useState('createdAt')
+  const [sortDir, setSortDir] = useState('desc')
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
-    try { setUsers(await api.getUsers() || []) } catch { /* handled */ }
+    try { setUsers(await api.getUsers({ sortBy: sortField, sortOrder: sortDir }) || []) } catch { /* handled */ }
     finally { setLoading(false) }
-  }, [])
+  }, [sortField, sortDir])
 
   useEffect(() => { loadUsers() }, [loadUsers])
 
@@ -105,15 +123,23 @@ export function UsersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-semibold text-stone-900">Users</h2>
           <p className="text-sm text-stone-500">Manage system users and roles</p>
         </div>
-        <Button onClick={() => { setCreateForm({ name: '', email: '', password: '', role: 'USER' }); setCreateOpen(true) }}
-          className="bg-stone-900 hover:bg-stone-800">
-          <Plus className="w-4 h-4 mr-2" />New User
-        </Button>
+        <div className="flex items-center gap-2">
+          {currentUser?.role === 'ADMIN' && (
+            <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              onClick={() => setResetOpen(true)}>
+              <AlertTriangle className="w-3.5 h-3.5 mr-2" />Reset All Data
+            </Button>
+          )}
+          <Button onClick={() => { setCreateForm({ name: '', email: '', password: '', role: 'USER' }); setCreateOpen(true) }}
+            className="bg-stone-900 hover:bg-stone-800">
+            <Plus className="w-4 h-4 mr-2" />New User
+          </Button>
+        </div>
       </div>
 
       <Card className="shadow-sm">
@@ -121,11 +147,11 @@ export function UsersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-xs">Name</TableHead>
-                <TableHead className="text-xs">Email</TableHead>
-                <TableHead className="text-xs">Role</TableHead>
-                <TableHead className="text-xs">Status</TableHead>
-                <TableHead className="text-xs">Created</TableHead>
+                <TableHead className="text-xs cursor-pointer select-none hover:bg-stone-100 transition-colors" onClick={() => handleSort('name')}>Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} /></TableHead>
+                <TableHead className="text-xs cursor-pointer select-none hover:bg-stone-100 transition-colors" onClick={() => handleSort('email')}>Email<SortIcon field="email" sortField={sortField} sortDir={sortDir} /></TableHead>
+                <TableHead className="text-xs cursor-pointer select-none hover:bg-stone-100 transition-colors" onClick={() => handleSort('role')}>Role<SortIcon field="role" sortField={sortField} sortDir={sortDir} /></TableHead>
+                <TableHead className="text-xs cursor-pointer select-none hover:bg-stone-100 transition-colors" onClick={() => handleSort('isActive')}>Status<SortIcon field="isActive" sortField={sortField} sortDir={sortDir} /></TableHead>
+                <TableHead className="text-xs cursor-pointer select-none hover:bg-stone-100 transition-colors" onClick={() => handleSort('createdAt')}>Created<SortIcon field="createdAt" sortField={sortField} sortDir={sortDir} /></TableHead>
                 <TableHead className="text-xs text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -244,6 +270,49 @@ export function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reset All Data Dialog */}
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Reset All Data
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p className="font-medium text-red-600">This will permanently delete ALL data from the system, including:</p>
+              <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                <li>All expenses, advances, and requisitions</li>
+                <li>All employees, salaries, attendance, and leave records</li>
+              </ul>
+              <p className="text-sm text-muted-foreground mt-2">User accounts will be preserved — no need to create a new login. Everyone will just need to log in again.</p>
+              <p>This action cannot be undone. Are you sure?</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              setResetLoading(true)
+              try {
+                const res = await fetch('/api/reset-data', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) })
+                const data = await res.json()
+                if (res.ok) {
+                  toast({ title: 'Data Reset Complete', description: `Deleted ${data.totalDeleted} records across ${Object.keys(data.details).length} tables.` })
+                  setResetOpen(false)
+                  // Redirect to login since sessions are cleared
+                  setTimeout(() => window.location.href = '/', 1500)
+                } else {
+                  toast({ title: 'Error', description: data.error || 'Failed to reset data', variant: 'destructive' })
+                }
+              } catch {
+                toast({ title: 'Error', description: 'Failed to reset data', variant: 'destructive' })
+              } finally { setResetLoading(false) }
+            }} disabled={resetLoading} className="bg-destructive hover:bg-destructive/90">
+              {resetLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Yes, Delete Everything
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Dialog */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

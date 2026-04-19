@@ -24,6 +24,12 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
+    const sortBy = searchParams.get('sortBy') || 'date';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
+    const validSortFields = ['date', 'createdAt', 'status', 'hoursWorked', 'overtimeHours'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'date';
+    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+
     const where: Prisma.AttendanceWhereInput = {};
 
     if (employeeId) where.employeeId = employeeId;
@@ -47,7 +53,10 @@ export async function GET(request: NextRequest) {
             include: { user: { select: { id: true, name: true, email: true } } },
           },
         },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [
+          { [sortField]: sortDirection } as any,
+          ...(sortField !== 'date' ? [{ date: sortDirection }] : []),
+        ],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -82,7 +91,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No attendance records provided' }, { status: 400 });
     }
 
-    const created = [];
+    const created: any[] = [];
 
     for (const record of records) {
       const { employeeId, date, status, checkIn, checkOut, hoursWorked, overtimeHours, notes } = record;

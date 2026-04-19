@@ -233,7 +233,7 @@ export function BulkUploadDialog({ open, onOpenChange, type, onSuccess }: BulkUp
                 type="file"
                 accept={acceptedTypes}
                 className="hidden"
-                onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f) }}
               />
               {file ? (
                 <div className="flex items-center justify-center gap-3">

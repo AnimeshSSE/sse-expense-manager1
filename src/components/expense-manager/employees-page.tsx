@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from '@/lib/api'
 import { toast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
@@ -124,6 +124,40 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: s
   )
 }
 
+// ==================== Sort Helpers ====================
+
+function SortIcon({ field, sortField, sortDir }: { field: string; sortField: string; sortDir: string }) {
+  if (sortField !== field) return <span className="ml-1 opacity-25 text-[9px] leading-none select-none">▲▼</span>
+  return <span className="ml-1 text-foreground text-[9px] leading-none select-none">{sortDir === 'asc' ? '▲' : '▼'}</span>
+}
+
+function sortData<T>(items: T[], field: string, dir: string): T[] {
+  return [...items].sort((a: any, b: any) => {
+    let aVal = field.includes('.') ? field.split('.').reduce((o: any, k: string) => o?.[k], a) : a[field]
+    let bVal = field.includes('.') ? field.split('.').reduce((o: any, k: string) => o?.[k], b) : b[field]
+    if (aVal == null) aVal = ''
+    if (bVal == null) bVal = ''
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      return dir === 'asc' ? aVal - bVal : bVal - aVal
+    }
+    return dir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal))
+  })
+}
+
+function useSortState(defaultField: string = 'createdAt', defaultDir: string = 'desc') {
+  const [sortField, setSortField] = useState(defaultField)
+  const [sortDir, setSortDir] = useState(defaultDir)
+  const handleSort = useCallback((field: string) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }, [sortField])
+  return { sortField, sortDir, handleSort }
+}
+
 // ==================== Employees Tab ====================
 
 function EmployeesTab() {
@@ -153,6 +187,9 @@ function EmployeesTab() {
     designation: '', department: '', phone: '', baseSalary: '',
     bankAccount: '', bankName: '', bankIfsc: '', panNumber: '', aadhaarNumber: '',
   })
+
+  const { sortField, sortDir, handleSort } = useSortState('createdAt', 'desc')
+  const sortedEmployees = useMemo(() => sortData(employees, sortField, sortDir), [employees, sortField, sortDir])
 
   const loadEmployees = useCallback(async () => {
     setLoading(true)
@@ -298,23 +335,24 @@ function EmployeesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">{t('hr.employeeCode')}</TableHead>
-                  <TableHead className="text-xs">{t('col.title')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.designation')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.department')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employeeCode')}>{t('hr.employeeCode')}<SortIcon field="employeeCode" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('user.name')}>{t('col.title')}<SortIcon field="user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('designation')}>{t('hr.designation')}<SortIcon field="designation" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('department')}>{t('hr.department')}<SortIcon field="department" sortField={sortField} sortDir={sortDir} /></TableHead>
                   <TableHead className="text-xs">{t('hr.phone')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.baseSalary')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('baseSalary')}>{t('hr.baseSalary')}<SortIcon field="baseSalary" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('status')}>{t('hr.status')}<SortIcon field="status" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('createdAt')}>{t('hr.joiningDate')}<SortIcon field="createdAt" sortField={sortField} sortDir={sortDir} /></TableHead>
                   <TableHead className="text-xs text-right">{t('col.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <SkeletonRows cols={8} />
+                  <SkeletonRows cols={9} />
                 ) : employees.length === 0 ? (
                   <EmptyState icon={Users} message={t('hr.noEmployees')} />
                 ) : (
-                  employees.map((emp: any) => (
+                  sortedEmployees.map((emp: any) => (
                     <TableRow key={emp.id}>
                       <TableCell className="text-xs font-mono font-medium">{emp.employeeCode}</TableCell>
                       <TableCell className="text-xs font-medium">{emp.user?.name || '-'}</TableCell>
@@ -325,6 +363,7 @@ function EmployeesTab() {
                       <TableCell>
                         <Badge className={`text-[10px] ${statusColors[emp.status] || ''}`}>{emp.status}</Badge>
                       </TableCell>
+                      <TableCell className="text-xs">{emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString() : '-'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setSelected(emp); setViewOpen(true) }}>
@@ -573,6 +612,8 @@ function AttendanceTab() {
   const [statusFilter, setStatusFilter] = useState('')
   const [localAttendance, setLocalAttendance] = useState<Record<string, string>>({})
 
+  const { sortField, sortDir, handleSort } = useSortState('employeeCode', 'asc')
+
   const loadEmployees = useCallback(async () => {
     try { setEmployees(await api.getEmployees({ status: 'ACTIVE' })) } catch { /* handled */ }
   }, [])
@@ -623,6 +664,15 @@ function AttendanceTab() {
   const filteredEmployees = statusFilter
     ? employees.filter((emp: any) => localAttendance[emp.id] === statusFilter)
     : employees
+
+  const displayEmployees = useMemo(() => {
+    return filteredEmployees.map(emp => ({
+      ...emp,
+      _sortStatus: localAttendance[emp.id] || 'PRESENT',
+      _sortHours: Number(attendance.find((a: any) => a.employeeId === emp.id)?.hoursWorked) || 0,
+    }))
+  }, [filteredEmployees, localAttendance, attendance])
+  const sortedEmployees = useMemo(() => sortData(displayEmployees, sortField, sortDir), [displayEmployees, sortField, sortDir])
 
   // Stats
   const presentCount = Object.values(localAttendance).filter((s) => s === 'PRESENT').length
@@ -687,13 +737,13 @@ function AttendanceTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">{t('hr.employeeCode')}</TableHead>
-                  <TableHead className="text-xs">{t('col.title')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.designation')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employeeCode')}>{t('hr.employeeCode')}<SortIcon field="employeeCode" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('user.name')}>{t('col.title')}<SortIcon field="user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('designation')}>{t('hr.designation')}<SortIcon field="designation" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('_sortStatus')}>{t('hr.status')}<SortIcon field="_sortStatus" sortField={sortField} sortDir={sortDir} /></TableHead>
                   <TableHead className="text-xs">{t('hr.checkIn')}</TableHead>
                   <TableHead className="text-xs">{t('hr.checkOut')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.hoursWorked')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('_sortHours')}>{t('hr.hoursWorked')}<SortIcon field="_sortHours" sortField={sortField} sortDir={sortDir} /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -702,7 +752,7 @@ function AttendanceTab() {
                 ) : filteredEmployees.length === 0 ? (
                   <EmptyState icon={CalendarDays} message={t('hr.noAttendance')} />
                 ) : (
-                  filteredEmployees.map((emp: any) => {
+                  sortedEmployees.map((emp: any) => {
                     const existingRecord = attendance.find((a: any) => a.employeeId === emp.id)
                     const currentStatus = localAttendance[emp.id] || 'PRESENT'
                     return (
@@ -764,6 +814,9 @@ function LeavesTab() {
 
   const [employees, setEmployees] = useState<any[]>([])
 
+  const { sortField, sortDir, handleSort } = useSortState('createdAt', 'desc')
+  const sortedLeaves = useMemo(() => sortData(leaves, sortField, sortDir), [leaves, sortField, sortDir])
+
   const loadLeaves = useCallback(async () => {
     setLoading(true)
     try {
@@ -781,7 +834,7 @@ function LeavesTab() {
       if (canApprove) {
         setEmployees(await api.getEmployees({ status: 'ACTIVE' }))
       } else {
-        const emps = await api.getEmployees({ userId: user?.id })
+        const emps = await api.getEmployees({ userId: user?.id || '' })
         setEmployees(emps)
         if (emps.length > 0) {
           setLeaveForm((f) => ({ ...f, employeeId: emps[0].id }))
@@ -895,13 +948,13 @@ function LeavesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">{t('hr.employee')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.leaveType')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.from')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.to')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.days')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employee.user.name')}>{t('hr.employee')}<SortIcon field="employee.user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('type')}>{t('hr.leaveType')}<SortIcon field="type" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('startDate')}>{t('hr.from')}<SortIcon field="startDate" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('endDate')}>{t('hr.to')}<SortIcon field="endDate" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('totalDays')}>{t('hr.days')}<SortIcon field="totalDays" sortField={sortField} sortDir={sortDir} /></TableHead>
                   <TableHead className="text-xs">{t('hr.reason')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('status')}>{t('hr.status')}<SortIcon field="status" sortField={sortField} sortDir={sortDir} /></TableHead>
                   <TableHead className="text-xs text-right">{t('col.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -911,7 +964,7 @@ function LeavesTab() {
                 ) : leaves.length === 0 ? (
                   <EmptyState icon={CalendarDays} message={t('hr.noLeaves')} />
                 ) : (
-                  leaves.map((leave: any) => (
+                  sortedLeaves.map((leave: any) => (
                     <TableRow key={leave.id}>
                       <TableCell className="text-xs font-medium">{leave.employee?.user?.name || '-'}</TableCell>
                       <TableCell>
@@ -1049,6 +1102,9 @@ function SalariesTab() {
   const currentMonth = format(new Date(), 'yyyy-MM')
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
 
+  const { sortField, sortDir, handleSort } = useSortState('baseSalary', 'asc')
+  const sortedSalaries = useMemo(() => sortData(salaries, sortField, sortDir), [salaries, sortField, sortDir])
+
   const loadSalaries = useCallback(async () => {
     setLoading(true)
     try {
@@ -1119,9 +1175,9 @@ function SalariesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">{t('hr.employeeCode')}</TableHead>
-                  <TableHead className="text-xs">{t('col.title')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.baseSalary')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employee.employeeCode')}>{t('hr.employeeCode')}<SortIcon field="employee.employeeCode" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('employee.user.name')}>{t('col.title')}<SortIcon field="employee.user.name" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('baseSalary')}>{t('hr.baseSalary')}<SortIcon field="baseSalary" sortField={sortField} sortDir={sortDir} /></TableHead>
                   <TableHead className="text-xs">{t('hr.hra')}</TableHead>
                   <TableHead className="text-xs">{t('hr.da')}</TableHead>
                   <TableHead className="text-xs">{t('hr.ta')}</TableHead>
@@ -1129,8 +1185,8 @@ function SalariesTab() {
                   <TableHead className="text-xs">{t('hr.deductions')}</TableHead>
                   <TableHead className="text-xs">{t('hr.pf')}</TableHead>
                   <TableHead className="text-xs">{t('hr.tds')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.netSalary')}</TableHead>
-                  <TableHead className="text-xs">{t('hr.status')}</TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('netSalary')}>{t('hr.netSalary')}<SortIcon field="netSalary" sortField={sortField} sortDir={sortDir} /></TableHead>
+                  <TableHead className="text-xs cursor-pointer select-none" onClick={() => handleSort('status')}>{t('hr.status')}<SortIcon field="status" sortField={sortField} sortDir={sortDir} /></TableHead>
                   {isAdmin && <TableHead className="text-xs text-right">{t('col.actions')}</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -1140,7 +1196,7 @@ function SalariesTab() {
                 ) : salaries.length === 0 ? (
                   <EmptyState icon={Banknote} message={t('hr.noSalaries')} />
                 ) : (
-                  salaries.map((sal: any) => (
+                  sortedSalaries.map((sal: any) => (
                     <TableRow key={sal.id}>
                       <TableCell className="text-xs font-mono">{sal.employee?.employeeCode || '-'}</TableCell>
                       <TableCell className="text-xs font-medium">{sal.employee?.user?.name || '-'}</TableCell>

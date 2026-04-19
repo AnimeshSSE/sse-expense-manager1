@@ -5,6 +5,31 @@ import { createAuditLog, formatAuditValues } from '@/lib/audit';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+export async function GET(_request: NextRequest, context: RouteContext) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+
+    const site = await db.site.findUnique({
+      where: { id },
+      include: { client: true },
+    });
+
+    if (!site) {
+      return NextResponse.json({ error: 'Site not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ site });
+  } catch (error: any) {
+    console.error('Get site error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const session = await getSession();

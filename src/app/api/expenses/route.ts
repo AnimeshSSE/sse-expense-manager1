@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     if (paymentMethods) {
       const methods = paymentMethods.split(',').filter(Boolean);
-      const validMethods = methods.filter((m): m is PaymentMethod => Object.values(PaymentMethod).includes(m));
+      const validMethods = methods.filter((m): m is PaymentMethod => (Object.values(PaymentMethod) as string[]).includes(m));
       if (validMethods.length === 1) {
         where.paymentMethod = validMethods[0];
       } else if (validMethods.length > 1) {
@@ -93,19 +93,34 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { description: { contains: search, mode: 'insensitive' } },
-        { sellerName: { contains: search, mode: 'insensitive' } },
-        { invoiceNumber: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { description: { contains: search } },
+        { sellerName: { contains: search } },
+        { invoiceNumber: { contains: search } },
+        { user: { name: { contains: search } } },
       ];
     }
 
     // Build orderBy
-    const validSortFields = ['createdAt', 'expenseDate', 'amount', 'status', 'updatedAt'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
-    const orderBy: Prisma.ExpenseOrderByWithRelationInput = {
-      [sortField]: sortOrder === 'asc' ? 'asc' : 'desc',
-    };
+    const validSortFields = [
+      'createdAt', 'updatedAt', 'expenseDate', 'submissionDate',
+      'amount', 'status', 'description', 'paymentMethod', 'isLateSubmission',
+    ];
+
+    const direction = sortOrder === 'asc' ? 'asc' : 'desc';
+    let orderBy: Prisma.ExpenseOrderByWithRelationInput;
+
+    // Handle nested relation sorts
+    if (sortBy === 'site.name') {
+      orderBy = { site: { name: direction } };
+    } else if (sortBy === 'category.name') {
+      orderBy = { category: { name: direction } };
+    } else if (sortBy === 'user.name') {
+      orderBy = { user: { name: direction } };
+    } else {
+      // Direct field sort with validation
+      const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+      orderBy = { [sortField]: direction };
+    }
 
     const [expenses, total] = await Promise.all([
       db.expense.findMany({

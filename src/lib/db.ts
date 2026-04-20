@@ -5,17 +5,29 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createDb(): PrismaClient {
-  const dbUrl = process.env.DATABASE_URL || ''
+  // Capture the real Turso URL before we overwrite process.env
+  const realDbUrl = process.env.DATABASE_URL || ''
+  const authToken = process.env.DATABASE_AUTH_TOKEN || ''
 
-  if (dbUrl.startsWith('libsql://')) {
-    // CRITICAL FIX: @libsql/client's createClient() ignores the `url` parameter
-    // in Vercel standalone builds and reads from process.env.TURSO_DATABASE_URL instead.
-    // We must set it so the internal fallback works.
+  if (realDbUrl.startsWith('libsql://')) {
+    // ────────────────────────────────────────────────────────────────────────
+    // CRITICAL: When using Prisma Driver Adapters, Prisma STILL validates
+    // the schema's datasource URL (`url = env("DATABASE_URL")`) at client
+    // construction time. On Vercel standalone builds this resolution can
+    // fail, returning the string 'undefined'.
+    //
+    // Solution: Set DATABASE_URL to a valid dummy SQLite file URL so Prisma's
+    // schema validation passes. The actual Turso connection is handled
+    // entirely by the adapter (libsql client), NOT by Prisma's datasource.
+    // ────────────────────────────────────────────────────────────────────────
+    process.env.DATABASE_URL = 'file:./dev.db'
+
+    // Set fallback env vars that @libsql/client reads internally
     if (!process.env.TURSO_DATABASE_URL) {
-      process.env.TURSO_DATABASE_URL = dbUrl
+      process.env.TURSO_DATABASE_URL = realDbUrl
     }
-    if (!process.env.TURSO_AUTH_TOKEN && process.env.DATABASE_AUTH_TOKEN) {
-      process.env.TURSO_AUTH_TOKEN = process.env.DATABASE_AUTH_TOKEN
+    if (!process.env.TURSO_AUTH_TOKEN && authToken) {
+      process.env.TURSO_AUTH_TOKEN = authToken
     }
 
     let PrismaLibSQL: any
@@ -41,15 +53,19 @@ function createDb(): PrismaClient {
       )
     }
 
+    // Create libsql client with the REAL Turso URL
     const libsql = createClient({
-      url: dbUrl,
-      authToken: process.env.DATABASE_AUTH_TOKEN,
+      url: realDbUrl,
+      authToken: authToken || undefined,
     })
 
     const adapter = new PrismaLibSQL(libsql)
+
+    // Do NOT pass datasourceUrl — it's incompatible with driver adapters.
+    // Prisma will use the dummy `file:./dev.db` from process.env for
+    // validation only; all actual queries go through the adapter.
     return new PrismaClient({
       adapter,
-      datasourceUrl: dbUrl,
       log: ['error'],
     })
   }

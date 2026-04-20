@@ -13,12 +13,12 @@ export async function GET() {
     results.crypto = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
 
-  // Test 2: Environment variables
-  const dbUrl = process.env.DATABASE_URL || ''
+  // Test 2: Environment variables — capture BEFORE any code overwrites them
+  const realDbUrl = process.env.DATABASE_URL || ''
   const dbToken = process.env.DATABASE_AUTH_TOKEN || ''
   results.env = {
-    status: dbUrl ? 'OK' : 'FAIL',
-    detail: `DATABASE_URL="${dbUrl.slice(0, 50)}${dbUrl.length > 50 ? '...' : ''}" (${dbUrl.length} chars), DATABASE_AUTH_TOKEN="${dbToken ? 'SET (' + dbToken.length + ' chars)' : 'NOT SET'}", NODE_ENV="${process.env.NODE_ENV || 'NOT SET'}", TURSO_DATABASE_URL="${process.env.TURSO_DATABASE_URL || 'NOT SET'}"`
+    status: realDbUrl ? 'OK' : 'FAIL',
+    detail: `DATABASE_URL="${realDbUrl.slice(0, 50)}${realDbUrl.length > 50 ? '...' : ''}" (${realDbUrl.length} chars), DATABASE_AUTH_TOKEN="${dbToken ? 'SET (' + dbToken.length + ' chars)' : 'NOT SET'}", NODE_ENV="${process.env.NODE_ENV || 'NOT SET'}", TURSO_DATABASE_URL="${process.env.TURSO_DATABASE_URL || 'NOT SET'}"`
   }
 
   // Test 3: @prisma/client
@@ -45,32 +45,40 @@ export async function GET() {
     results.libsqlClient = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
 
-  // Test 6: DB connection (with TURSO_DATABASE_URL fallback)
+  // Test 6: DB connection via adapter
   try {
-    if (dbUrl.startsWith('libsql://')) {
-      // Set TURSO env vars as fallback (same fix as db.ts)
-      if (!process.env.TURSO_DATABASE_URL) process.env.TURSO_DATABASE_URL = dbUrl
+    if (realDbUrl.startsWith('libsql://')) {
+      // Set fallback env vars for @libsql/client
+      if (!process.env.TURSO_DATABASE_URL) process.env.TURSO_DATABASE_URL = realDbUrl
       if (!process.env.TURSO_AUTH_TOKEN && dbToken) process.env.TURSO_AUTH_TOKEN = dbToken
+
+      // CRITICAL: Set DATABASE_URL to a valid dummy SQLite URL so Prisma's
+      // schema validation passes. datasourceUrl is NOT allowed with adapters.
+      process.env.DATABASE_URL = 'file:./dev.db'
 
       const { PrismaClient } = await import('@prisma/client')
       const adapterMod = await import('@prisma/adapter-libsql')
       const libsqlMod = await import('@libsql/client')
       const PrismaLibSQL = (adapterMod as any).PrismaLibSQL || (adapterMod as any).default
       const createClientFn = (libsqlMod as any).createClient || (libsqlMod as any).default?.createClient
-      const libsql = createClientFn({ url: dbUrl, authToken: dbToken || undefined })
+
+      // Connect libsql client to the REAL Turso URL
+      const libsql = createClientFn({ url: realDbUrl, authToken: dbToken || undefined })
       const adapter = new PrismaLibSQL(libsql)
-      const testDb = new PrismaClient({ adapter, datasourceUrl: dbUrl })
+
+      // No datasourceUrl — adapter handles the connection
+      const testDb = new PrismaClient({ adapter })
       const count = await testDb.user.count()
       await testDb.$disconnect()
       results.dbConnection = { status: 'OK', detail: `Connected. Users: ${count}` }
-    } else if (dbUrl.startsWith('file:')) {
+    } else if (realDbUrl.startsWith('file:')) {
       const { PrismaClient } = await import('@prisma/client')
       const testDb = new PrismaClient()
       const count = await testDb.user.count()
       await testDb.$disconnect()
       results.dbConnection = { status: 'OK', detail: `SQLite file. Users: ${count}` }
     } else {
-      results.dbConnection = { status: 'SKIP', detail: `URL type: ${dbUrl.slice(0, 15)}` }
+      results.dbConnection = { status: 'SKIP', detail: `URL type: ${realDbUrl.slice(0, 15)}` }
     }
   } catch (e) {
     results.dbConnection = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }

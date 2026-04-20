@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
           }
           const validRoles = ['ADMIN', 'ACCOUNTANT', 'STOCK_MANAGER', 'USER']
           const role = validRoles.includes(roleStr) ? roleStr as Role : Role.USER
-          const hashedPassword = await hashPassword(password)
+          const hashedPassword = hashPassword(password)
           await db.user.create({ data: { name, email, password: hashedPassword, role } })
           success.push(`Row ${i + 2}: User "${name}" (${email}) created with role ${role}`)
         }

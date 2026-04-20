@@ -20,7 +20,6 @@ export async function POST(request: NextRequest) {
     })
 
     if (!user) {
-      console.warn(`Login attempt for non-existent email: ${email}`)
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
@@ -28,9 +27,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Account is deactivated' }, { status: 403 })
     }
 
-    const valid = await verifyPassword(password, user.password)
+    const valid = verifyPassword(password, user.password)
     if (!valid) {
-      console.warn(`Login attempt with wrong password for: ${email}`)
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
     }
 
@@ -46,7 +44,6 @@ export async function POST(request: NextRequest) {
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
     })
 
-    // Detect HTTPS for Secure flag
     const isSecure = request.headers.get('x-forwarded-proto') === 'https' || process.env.NODE_ENV === 'production'
     const secureFlag = isSecure ? '; Secure' : ''
 
@@ -57,10 +54,8 @@ export async function POST(request: NextRequest) {
 
     return response
   } catch (error) {
-    console.error('Login error:', error instanceof Error ? error.message : error)
-    return NextResponse.json(
-      { error: 'Login failed', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Login error:', message, error)
+    return NextResponse.json({ error: 'Login failed', details: message }, { status: 500 })
   }
 }

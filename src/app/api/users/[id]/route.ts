@@ -79,7 +79,7 @@ export async function PUT(
     if (email !== undefined) updateData.email = email
     if (role !== undefined) updateData.role = role
     if (isActive !== undefined) updateData.isActive = isActive
-    if (password) updateData.password = await hashPassword(password)
+    if (password) updateData.password = hashPassword(password)
 
     const oldValues = JSON.stringify({ name: existing.name, email: existing.email, role: existing.role, isActive: existing.isActive })
 

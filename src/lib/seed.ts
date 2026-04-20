@@ -8,7 +8,7 @@ export async function ensureSeeded() {
   try {
     const count = await db.user.count()
     if (count === 0) {
-      const password = await hashPassword('admin123')
+      const password = hashPassword('admin123')
 
       // Create users for all 4 roles
       const admin = await db.user.create({

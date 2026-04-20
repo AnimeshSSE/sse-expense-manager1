@@ -29,12 +29,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const valid = await verifyPassword(currentPassword, user.password)
+    const valid = verifyPassword(currentPassword, user.password)
     if (!valid) {
       return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
     }
 
-    const hashedNewPassword = await hashPassword(newPassword)
+    const hashedNewPassword = hashPassword(newPassword)
     await db.user.update({
       where: { id: session.id },
       data: { password: hashedNewPassword },

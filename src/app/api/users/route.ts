@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
     }
 
-    const hashedPassword = await hashPassword(password)
+    const hashedPassword = hashPassword(password)
 
     const user = await db.user.create({
       data: {

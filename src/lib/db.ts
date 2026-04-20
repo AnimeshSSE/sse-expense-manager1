@@ -8,8 +8,6 @@ function createDb(): PrismaClient {
   const dbUrl = process.env.DATABASE_URL || ''
 
   if (dbUrl.startsWith('libsql://')) {
-    // Dynamic import for Turso/libsql adapter
-    // These are in serverExternalPackages so they won't be bundled
     let PrismaLibSQL: any
     let createClient: any
 
@@ -19,7 +17,7 @@ function createDb(): PrismaClient {
       PrismaLibSQL = adapterMod.PrismaLibSQL || adapterMod.default || adapterMod
     } catch (e) {
       throw new Error(
-        `Failed to load @prisma/adapter-libsql. Ensure it is installed. Error: ${e instanceof Error ? e.message : String(e)}`
+        `load_adapter_failed: ${e instanceof Error ? e.message : String(e)}`
       )
     }
 
@@ -29,7 +27,7 @@ function createDb(): PrismaClient {
       createClient = libsqlMod.createClient || libsqlMod.default?.createClient
     } catch (e) {
       throw new Error(
-        `Failed to load @libsql/client. Ensure it is installed. Error: ${e instanceof Error ? e.message : String(e)}`
+        `load_libsql_failed: ${e instanceof Error ? e.message : String(e)}`
       )
     }
 
@@ -45,6 +43,50 @@ function createDb(): PrismaClient {
   return new PrismaClient({ log: ['error'] })
 }
 
-export const db = globalForPrisma.prisma ?? createDb()
+// Lazy initialization — don't create DB connection at module load time.
+// This prevents the entire module from crashing if require() fails.
+let _db: PrismaClient | undefined
+let _dbInitFailed = false
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+export function getDb(): PrismaClient {
+  if (_db) return _db
+  if (globalForPrisma.prisma) {
+    _db = globalForPrisma.prisma
+    return _db
+  }
+  try {
+    _db = createDb()
+    if (process.env.NODE_ENV !== 'production') {
+      globalForPrisma.prisma = _db
+    }
+    return _db
+  } catch (e) {
+    _dbInitFailed = true
+    throw e
+  }
+}
+
+// Backwards-compatible export — works like a real PrismaClient but initializes lazily
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    if (_dbInitFailed) {
+      throw new Error(
+        `Database module failed to initialize. Check /api/debug for details.`
+      )
+    }
+    const actualDb = getDb()
+    const value = (actualDb as any)[prop]
+    if (typeof value === 'function') {
+      return value.bind(actualDb)
+    }
+    return value
+  },
+})
+
+export function isDbInitialized(): boolean {
+  return _db !== undefined || globalForPrisma.prisma !== undefined
+}
+
+export function getDbInitError(): boolean {
+  return _dbInitFailed
+}

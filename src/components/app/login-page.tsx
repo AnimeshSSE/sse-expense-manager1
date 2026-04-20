@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useLanguage } from '@/hooks/use-language'
-import { Eye, EyeOff, Globe } from 'lucide-react'
+import { Eye, EyeOff, Globe, AlertTriangle } from 'lucide-react'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -17,16 +17,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [errorDetail, setErrorDetail] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setErrorDetail('')
     setLoading(true)
     try {
       await login(email, password)
     } catch (err: any) {
-      setError(err.message || 'Login failed')
+      const msg = err?.message || 'Login failed'
+      setError(msg)
+      // If it's a server error (500), show the debug link
+      if (msg.includes('Login failed') || msg.includes('Error') || msg.includes('load_')) {
+        setErrorDetail(msg)
+      }
     } finally {
       setLoading(false)
     }
@@ -62,7 +69,23 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg px-4 py-3 text-sm">
-                {error}
+                <div className="font-medium">{error}</div>
+                {errorDetail && (
+                  <div className="mt-2 text-xs text-red-300 font-mono break-all bg-red-500/5 rounded p-2">
+                    {errorDetail}
+                  </div>
+                )}
+                {errorDetail && (
+                  <a
+                    href="/api/debug"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 underline"
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    Run Diagnostics (opens /api/debug)
+                  </a>
+                )}
               </div>
             )}
             <div className="space-y-2">
@@ -106,6 +129,18 @@ export default function LoginPage() {
               {loading ? t.loading + '...' : t.loginButton}
             </Button>
           </form>
+
+          {/* Debug link always visible */}
+          <div className="mt-4 text-center">
+            <a
+              href="/api/debug"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-navy-500 hover:text-navy-300 transition-colors"
+            >
+              Server Diagnostics
+            </a>
+          </div>
         </CardContent>
       </Card>
     </div>

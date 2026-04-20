@@ -59,7 +59,7 @@ export async function GET() {
       const createClientFn = (libsqlMod as any).createClient || (libsqlMod as any).default?.createClient
       const libsql = createClientFn({ url: dbUrl, authToken: dbToken || undefined })
       const adapter = new PrismaLibSQL(libsql)
-      const testDb = new PrismaClient({ adapter })
+      const testDb = new PrismaClient({ adapter, datasourceUrl: dbUrl })
       const count = await testDb.user.count()
       await testDb.$disconnect()
       results.dbConnection = { status: 'OK', detail: `Connected. Users: ${count}` }

@@ -47,7 +47,11 @@ function createDb(): PrismaClient {
     })
 
     const adapter = new PrismaLibSQL(libsql)
-    return new PrismaClient({ adapter, log: ['error'] })
+    return new PrismaClient({
+      adapter,
+      datasourceUrl: dbUrl,
+      log: ['error'],
+    })
   }
 
   return new PrismaClient({ log: ['error'] })

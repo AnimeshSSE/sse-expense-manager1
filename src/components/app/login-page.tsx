@@ -95,7 +95,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@ss-electricals.com"
+                placeholder="name@company.com"
                 required
                 className="bg-navy-800 border-navy-600 text-white placeholder:text-navy-500 focus:border-amber-500 focus:ring-amber-500/20"
               />

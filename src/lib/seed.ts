@@ -10,46 +10,46 @@ export async function ensureSeeded() {
     if (count === 0) {
       const password = hashPassword('admin123')
 
-      // Create users for all 4 roles
+      // ── Users (admin login: admin@company.com / admin123) ──
       const admin = await db.user.create({
-        data: { email: 'admin@sslectricals.com', password, name: 'Admin', role: 'ADMIN', isActive: true },
+        data: { email: 'admin@company.com', password, name: 'Admin', role: 'ADMIN', isActive: true },
       })
       const accountant = await db.user.create({
-        data: { email: 'accountant@sslectricals.com', password, name: 'Rajesh Kumar', role: 'ACCOUNTANT', isActive: true },
+        data: { email: 'accountant@company.com', password, name: 'Rajesh Kumar', role: 'ACCOUNTANT', isActive: true },
       })
       const stockManager = await db.user.create({
-        data: { email: 'stock@sslectricals.com', password, name: 'Sunil Verma', role: 'STOCK_MANAGER', isActive: true },
+        data: { email: 'stock@company.com', password, name: 'Sunil Verma', role: 'STOCK_MANAGER', isActive: true },
       })
       const employee = await db.user.create({
-        data: { email: 'employee@sslectricals.com', password, name: 'Amit Sharma', role: 'USER', isActive: true },
+        data: { email: 'employee@company.com', password, name: 'Amit Sharma', role: 'USER', isActive: true },
       })
 
-      // Create demo clients
+      // ── Demo Clients ──
       const c1 = await db.client.create({ data: { name: 'L&T Construction', description: 'Metro Project - Phase 2', isActive: true } })
       const c2 = await db.client.create({ data: { name: 'DLF Limited', description: 'Commercial Tower Wiring', isActive: true } })
       const c3 = await db.client.create({ data: { name: 'Godrej Properties', description: 'Residential Complex', isActive: true } })
 
-      // Create demo sites
+      // ── Demo Sites ──
       const s1 = await db.site.create({ data: { name: 'Metro Station A', clientId: c1.id, location: 'Sector 15, Gurgaon', budget: 500000, isActive: true } })
       const s2 = await db.site.create({ data: { name: 'Tower B - Electrical', clientId: c2.id, location: 'Cyber City, Gurgaon', budget: 300000, isActive: true } })
       const s3 = await db.site.create({ data: { name: 'Villa Complex', clientId: c3.id, location: 'Noida Expressway', budget: 200000, isActive: true } })
 
-      // Create demo categories
-      await db.category.create({ data: { name: 'Wires & Cables', type: 'EXPENSE', isActive: true } })
-      await db.category.create({ data: { name: 'Switches & Panels', type: 'EXPENSE', isActive: true } })
-      await db.category.create({ data: { name: 'Lighting', type: 'BOTH', isActive: true } })
+      // ── Demo Categories ──
+      const catWires = await db.category.create({ data: { name: 'Wires & Cables', type: 'EXPENSE', isActive: true } })
+      const catSwitches = await db.category.create({ data: { name: 'Switches & Panels', type: 'EXPENSE', isActive: true } })
+      const catLighting = await db.category.create({ data: { name: 'Lighting', type: 'BOTH', isActive: true } })
       await db.category.create({ data: { name: 'Tools & Equipment', type: 'BOTH', isActive: true } })
       await db.category.create({ data: { name: 'Pipes & Conduits', type: 'EXPENSE', isActive: true } })
       await db.category.create({ data: { name: 'Safety Equipment', type: 'BOTH', isActive: true } })
 
-      // Create demo employees
+      // ── Demo Employees ──
       await db.employee.create({ data: { userId: employee.id, employeeCode: 'EMP001', designation: 'Electrician', department: 'Site Operations', phone: '9876543210', joiningDate: new Date('2023-01-15'), baseSalary: 25000 } })
       await db.employee.create({ data: { userId: stockManager.id, employeeCode: 'EMP002', designation: 'Store Manager', department: 'Inventory', phone: '9876543211', joiningDate: new Date('2022-06-01'), baseSalary: 35000 } })
 
-      // Create demo expenses
+      // ── Demo Expenses ──
       await db.expense.create({
         data: {
-          siteId: s1.id, categoryId: (await db.category.findFirst({ where: { name: 'Wires & Cables' } }))!.id,
+          siteId: s1.id, categoryId: catWires.id,
           userId: employee.id, amount: 15000, description: '3mm PVC wires - 500 meters',
           expenseDate: new Date(), sellerName: 'Kei Industries', invoiceNumber: 'INV-001',
           paymentMethod: 'CASH', status: 'PENDING',
@@ -57,7 +57,7 @@ export async function ensureSeeded() {
       })
       await db.expense.create({
         data: {
-          siteId: s2.id, categoryId: (await db.category.findFirst({ where: { name: 'Lighting' } }))!.id,
+          siteId: s2.id, categoryId: catLighting.id,
           userId: employee.id, amount: 8500, description: 'LED panel lights x25',
           expenseDate: new Date(Date.now() - 86400000), sellerName: 'Havells India', invoiceNumber: 'INV-002',
           paymentMethod: 'UPI', status: 'PENDING',
@@ -65,7 +65,7 @@ export async function ensureSeeded() {
       })
       await db.expense.create({
         data: {
-          siteId: s1.id, categoryId: (await db.category.findFirst({ where: { name: 'Switches & Panels' } }))!.id,
+          siteId: s1.id, categoryId: catSwitches.id,
           userId: employee.id, amount: 22000, description: 'Distribution board - 3 phase',
           expenseDate: new Date(Date.now() - 172800000), sellerName: 'Schneider Electric',
           invoiceNumber: 'INV-003', paymentMethod: 'OFFICE', status: 'ACCOUNTANT_APPROVED',
@@ -73,7 +73,7 @@ export async function ensureSeeded() {
         },
       })
 
-      // Create demo advances
+      // ── Demo Advances ──
       await db.advance.create({
         data: {
           userId: employee.id, siteId: s1.id, amount: 10000, purpose: 'Wire purchase advance',
@@ -88,7 +88,7 @@ export async function ensureSeeded() {
         },
       })
 
-      // Create demo requisitions
+      // ── Demo Requisition ──
       await db.requisition.create({
         data: {
           siteId: s1.id, userId: employee.id, title: 'Wiring Material Request',
@@ -97,7 +97,7 @@ export async function ensureSeeded() {
         },
       })
 
-      console.log('✅ Database seeded with demo data')
+      console.log('Database seeded with demo data')
     }
     seeded = true
   } catch (error) {

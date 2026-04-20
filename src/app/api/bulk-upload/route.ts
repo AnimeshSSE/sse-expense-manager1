@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
 import { hashPassword } from '@/lib/auth'
-import { CategoryType, Role } from '@prisma/client'
+import { CategoryType, Role } from '@/lib/prisma-constants'
 
 export async function POST(request: NextRequest) {
   try {

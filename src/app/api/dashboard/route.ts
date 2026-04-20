@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 
@@ -56,6 +56,8 @@ export async function GET(request: NextRequest) {
       ...siteFilter,
       ...(paramClientId ? { site: { clientId: paramClientId } } : {}),
     }
+
+    const { Prisma: P } = await import('@prisma/client')
 
     // ===== RUN ALL QUERIES IN PARALLEL =====
     const [
@@ -179,7 +181,7 @@ export async function GET(request: NextRequest) {
 
       // Late submissions monthly breakdown (GROUP BY)
       db.$queryRaw<Array<{ month: string; total: number; count: number }>>(
-        Prisma.sql`
+        P.sql`
           SELECT 
             strftime('%Y-%m', e."createdAt") as month,
             COALESCE(SUM(e."amount"), 0) as total,
@@ -237,15 +239,15 @@ export async function GET(request: NextRequest) {
       // Reports: By month — raw SQL with tagged template
       canViewReports
         ? db.$queryRaw<Array<{ month: string; total: number; count: number }>>(
-            Prisma.sql`
+            P.sql`
               SELECT 
                 strftime('%Y-%m', e."expenseDate") as month,
                 COALESCE(SUM(e."amount"), 0) as total,
                 COUNT(*) as count
               FROM "Expense" e
               WHERE 1=1
-                ${(!canViewAllExpenses) ? Prisma.sql`AND e."userId" = ${session.id}` : Prisma.empty}
-                ${paramSiteId ? Prisma.sql`AND e."siteId" = ${paramSiteId}` : Prisma.empty}
+                ${(!canViewAllExpenses) ? P.sql`AND e."userId" = ${session.id}` : P.empty}
+                ${paramSiteId ? P.sql`AND e."siteId" = ${paramSiteId}` : P.empty}
               GROUP BY strftime('%Y-%m', e."expenseDate")
               ORDER BY month DESC
               LIMIT 12

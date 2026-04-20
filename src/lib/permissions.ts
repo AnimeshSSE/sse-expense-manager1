@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client'
+import { Role } from '@/lib/prisma-constants'
 
 type Permission = 
   | 'VIEW_ALL_EXPENSES'

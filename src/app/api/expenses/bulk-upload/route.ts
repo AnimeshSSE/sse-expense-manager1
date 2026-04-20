@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
-import { PaymentMethod } from '@prisma/client'
+import { PaymentMethod } from '@/lib/prisma-constants'
 import * as XLSX from 'xlsx'
 
 // POST /api/expenses/bulk-upload

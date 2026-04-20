@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
-import { AdvanceStatus } from '@prisma/client'
+import { AdvanceStatus } from '@/lib/prisma-constants'
 
 // GET /api/advances — list with filters + pagination
 export async function GET(request: NextRequest) {

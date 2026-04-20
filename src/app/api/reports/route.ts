@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 
@@ -48,6 +48,8 @@ export async function GET(request: NextRequest) {
       ...clientFilter,
     }
 
+    const { Prisma: P } = await import('@prisma/client')
+
     // Run all queries in parallel
     const [
       byCategory,
@@ -73,7 +75,7 @@ export async function GET(request: NextRequest) {
 
       // By month — raw SQL with tagged template (NOT $queryRawUnsafe)
       db.$queryRaw<Array<{ month: string; total: number; count: number }>>(
-        Prisma.sql`
+        P.sql`
           SELECT 
             strftime('%Y-%m', e."expenseDate") as month,
             COALESCE(SUM(e."amount"), 0) as total,
@@ -81,8 +83,8 @@ export async function GET(request: NextRequest) {
           FROM "Expense" e
           WHERE e."expenseDate" >= ${dateStart.toISOString()} 
             AND e."expenseDate" < ${dateEnd.toISOString()}
-            ${paramSiteId ? Prisma.sql`AND e."siteId" = ${paramSiteId}` : Prisma.empty}
-            ${paramUserId ? Prisma.sql`AND e."userId" = ${paramUserId}` : Prisma.empty}
+            ${paramSiteId ? P.sql`AND e."siteId" = ${paramSiteId}` : P.empty}
+            ${paramUserId ? P.sql`AND e."userId" = ${paramUserId}` : P.empty}
           GROUP BY strftime('%Y-%m', e."expenseDate")
           ORDER BY month ASC
         `

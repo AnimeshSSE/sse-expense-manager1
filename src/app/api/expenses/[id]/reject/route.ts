@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
-import { ExpenseStatus } from '@prisma/client'
+import { ExpenseStatus } from '@/lib/prisma-constants'
 
 // POST /api/expenses/[id]/reject
 export async function POST(

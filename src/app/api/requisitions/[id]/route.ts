@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 
 // GET /api/requisitions/[id]
 export async function GET(

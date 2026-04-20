@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 
 // GET /api/boq
 export async function GET(req: NextRequest) {

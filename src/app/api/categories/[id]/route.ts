@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
-import { CategoryType } from '@prisma/client'
+import { CategoryType } from '@/lib/prisma-constants'
 
 // GET /api/categories/[id] — single category
 export async function GET(

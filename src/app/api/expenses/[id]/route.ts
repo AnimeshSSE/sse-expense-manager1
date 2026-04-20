@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { checkPermission } from '@/lib/permissions'
 import { createAuditLog } from '@/lib/audit'
-import { ExpenseStatus, PaymentMethod } from '@prisma/client'
+import { ExpenseStatus, PaymentMethod } from '@/lib/prisma-constants'
 
 // GET /api/expenses/[id] — single expense with full relations
 export async function GET(

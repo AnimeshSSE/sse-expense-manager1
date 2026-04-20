@@ -8,6 +8,16 @@ function createDb(): PrismaClient {
   const dbUrl = process.env.DATABASE_URL || ''
 
   if (dbUrl.startsWith('libsql://')) {
+    // CRITICAL FIX: @libsql/client's createClient() ignores the `url` parameter
+    // in Vercel standalone builds and reads from process.env.TURSO_DATABASE_URL instead.
+    // We must set it so the internal fallback works.
+    if (!process.env.TURSO_DATABASE_URL) {
+      process.env.TURSO_DATABASE_URL = dbUrl
+    }
+    if (!process.env.TURSO_AUTH_TOKEN && process.env.DATABASE_AUTH_TOKEN) {
+      process.env.TURSO_AUTH_TOKEN = process.env.DATABASE_AUTH_TOKEN
+    }
+
     let PrismaLibSQL: any
     let createClient: any
 
@@ -43,12 +53,11 @@ function createDb(): PrismaClient {
   return new PrismaClient({ log: ['error'] })
 }
 
-// Lazy initialization — don't create DB connection at module load time.
-// This prevents the entire module from crashing if require() fails.
+// Lazy initialization via Proxy — never crashes at module load time
 let _db: PrismaClient | undefined
 let _dbInitFailed = false
 
-export function getDb(): PrismaClient {
+function getDb(): PrismaClient {
   if (_db) return _db
   if (globalForPrisma.prisma) {
     _db = globalForPrisma.prisma
@@ -66,13 +75,10 @@ export function getDb(): PrismaClient {
   }
 }
 
-// Backwards-compatible export — works like a real PrismaClient but initializes lazily
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop) {
     if (_dbInitFailed) {
-      throw new Error(
-        `Database module failed to initialize. Check /api/debug for details.`
-      )
+      throw new Error('Database init failed. Check /api/debug')
     }
     const actualDb = getDb()
     const value = (actualDb as any)[prop]
@@ -82,11 +88,3 @@ export const db = new Proxy({} as PrismaClient, {
     return value
   },
 })
-
-export function isDbInitialized(): boolean {
-  return _db !== undefined || globalForPrisma.prisma !== undefined
-}
-
-export function getDbInitError(): boolean {
-  return _dbInitFailed
-}

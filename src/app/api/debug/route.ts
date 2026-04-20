@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 
-// ZERO external dependencies — no prisma, no db, no auth imports.
-// Tests each component individually to find the exact failure point on Vercel.
+// ZERO external deps. Tests each component individually to find failures on Vercel.
 export async function GET() {
   const results: Record<string, { status: string; detail: string }> = {}
 
@@ -19,7 +18,7 @@ export async function GET() {
   const dbToken = process.env.DATABASE_AUTH_TOKEN || ''
   results.env = {
     status: dbUrl ? 'OK' : 'FAIL',
-    detail: `DATABASE_URL="${dbUrl.slice(0, 50)}${dbUrl.length > 50 ? '...' : ''}" (${dbUrl.length} chars), DATABASE_AUTH_TOKEN="${dbToken ? 'SET (' + dbToken.length + ' chars)' : 'NOT SET'}", NODE_ENV="${process.env.NODE_ENV || 'NOT SET'}"`
+    detail: `DATABASE_URL="${dbUrl.slice(0, 50)}${dbUrl.length > 50 ? '...' : ''}" (${dbUrl.length} chars), DATABASE_AUTH_TOKEN="${dbToken ? 'SET (' + dbToken.length + ' chars)' : 'NOT SET'}", NODE_ENV="${process.env.NODE_ENV || 'NOT SET'}", TURSO_DATABASE_URL="${process.env.TURSO_DATABASE_URL || 'NOT SET'}"`
   }
 
   // Test 3: @prisma/client
@@ -33,8 +32,7 @@ export async function GET() {
   // Test 4: @prisma/adapter-libsql
   try {
     const mod = await import('@prisma/adapter-libsql')
-    const keys = Object.keys(mod)
-    results.prismaAdapter = { status: 'OK', detail: `Loaded. Exports: ${keys.join(', ')}` }
+    results.prismaAdapter = { status: 'OK', detail: `Exports: ${Object.keys(mod).join(', ')}` }
   } catch (e) {
     results.prismaAdapter = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
@@ -42,45 +40,47 @@ export async function GET() {
   // Test 5: @libsql/client
   try {
     const mod = await import('@libsql/client')
-    const keys = Object.keys(mod)
-    results.libsqlClient = { status: 'OK', detail: `Loaded. Exports: ${keys.join(', ')}` }
+    results.libsqlClient = { status: 'OK', detail: `Exports: ${Object.keys(mod).join(', ')}` }
   } catch (e) {
     results.libsqlClient = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
 
-  // Test 6: DB connection
+  // Test 6: DB connection (with TURSO_DATABASE_URL fallback)
   try {
-    if (dbUrl.startsWith('libsql://') && results.prismaAdapter?.status === 'OK') {
+    if (dbUrl.startsWith('libsql://')) {
+      // Set TURSO env vars as fallback (same fix as db.ts)
+      if (!process.env.TURSO_DATABASE_URL) process.env.TURSO_DATABASE_URL = dbUrl
+      if (!process.env.TURSO_AUTH_TOKEN && dbToken) process.env.TURSO_AUTH_TOKEN = dbToken
+
       const { PrismaClient } = await import('@prisma/client')
       const adapterMod = await import('@prisma/adapter-libsql')
       const libsqlMod = await import('@libsql/client')
       const PrismaLibSQL = (adapterMod as any).PrismaLibSQL || (adapterMod as any).default
-      const createClient = (libsqlMod as any).createClient || (libsqlMod as any).default?.createClient
-      const libsql = createClient({ url: dbUrl, authToken: dbToken || undefined })
+      const createClientFn = (libsqlMod as any).createClient || (libsqlMod as any).default?.createClient
+      const libsql = createClientFn({ url: dbUrl, authToken: dbToken || undefined })
       const adapter = new PrismaLibSQL(libsql)
       const testDb = new PrismaClient({ adapter })
       const count = await testDb.user.count()
       await testDb.$disconnect()
       results.dbConnection = { status: 'OK', detail: `Connected. Users: ${count}` }
-    } else if (!dbUrl.startsWith('libsql://') && dbUrl.startsWith('file:')) {
+    } else if (dbUrl.startsWith('file:')) {
       const { PrismaClient } = await import('@prisma/client')
       const testDb = new PrismaClient()
       const count = await testDb.user.count()
       await testDb.$disconnect()
-      results.dbConnection = { status: 'OK', detail: `SQLite file mode. Users: ${count}` }
+      results.dbConnection = { status: 'OK', detail: `SQLite file. Users: ${count}` }
     } else {
-      results.dbConnection = { status: 'SKIP', detail: `DB URL type not handled or adapter missing (url starts with: ${dbUrl.slice(0, 10)})` }
+      results.dbConnection = { status: 'SKIP', detail: `URL type: ${dbUrl.slice(0, 15)}` }
     }
   } catch (e) {
     results.dbConnection = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
 
-  // Test 7: Auth module
+  // Test 7: Auth
   try {
     const auth = await import('@/lib/auth')
     const hash = auth.hashPassword('admin123')
-    const valid = auth.verifyPassword('admin123', hash)
-    results.auth = { status: valid ? 'OK' : 'FAIL', detail: valid ? `Hash: ${hash.slice(0, 12)}... verify=true` : 'Hash verify returned false' }
+    results.auth = { status: auth.verifyPassword('admin123', hash) ? 'OK' : 'FAIL', detail: `Hash: ${hash.slice(0, 12)}...` }
   } catch (e) {
     results.auth = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
@@ -90,19 +90,19 @@ export async function GET() {
     if (results.dbConnection?.status === 'OK') {
       const { ensureSeeded } = await import('@/lib/seed')
       await ensureSeeded()
-      results.seed = { status: 'OK', detail: 'Seeded (or already seeded)' }
+      results.seed = { status: 'OK', detail: 'Done' }
     } else {
-      results.seed = { status: 'SKIP', detail: 'Skipped — DB failed' }
+      results.seed = { status: 'SKIP', detail: 'DB failed' }
     }
   } catch (e) {
     results.seed = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }
 
-  // Test 9: db module (this is the one that crashes if require() fails)
+  // Test 9: db module (the real one the app uses)
   try {
     const { db } = await import('@/lib/db')
     const count = await db.user.count()
-    results.dbModule = { status: 'OK', detail: `db module works. Users: ${count}` }
+    results.dbModule = { status: 'OK', detail: `Users: ${count}` }
   } catch (e) {
     results.dbModule = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }
   }

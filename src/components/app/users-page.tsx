@@ -406,7 +406,7 @@ export function UsersPage() {
               <Input
                 id="uemail"
                 type="email"
-                placeholder="user@example.com"
+                placeholder="user@company.com"
                 value={formData.email}
                 onChange={(e) => setFormData((f) => ({ ...f, email: e.target.value }))}
                 className="border-navy-200 focus:border-amber-400 focus:ring-amber-400/20"

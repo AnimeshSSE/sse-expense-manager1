@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useLanguage } from '@/hooks/use-language'
-import { Eye, EyeOff, Globe, AlertTriangle } from 'lucide-react'
+import { Eye, EyeOff, Globe } from 'lucide-react'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -76,15 +76,9 @@ export default function LoginPage() {
                   </div>
                 )}
                 {errorDetail && (
-                  <a
-                    href="/api/debug"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 underline"
-                  >
-                    <AlertTriangle className="w-3 h-3" />
-                    Run Diagnostics (opens /api/debug)
-                  </a>
+                  <p className="mt-2 text-xs text-red-300">
+                    If this persists, contact your administrator.
+                  </p>
                 )}
               </div>
             )}
@@ -129,18 +123,6 @@ export default function LoginPage() {
               {loading ? t.loading + '...' : t.loginButton}
             </Button>
           </form>
-
-          {/* Debug link always visible */}
-          <div className="mt-4 text-center">
-            <a
-              href="/api/debug"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-navy-500 hover:text-navy-300 transition-colors"
-            >
-              Server Diagnostics
-            </a>
-          </div>
         </CardContent>
       </Card>
     </div>

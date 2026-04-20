@@ -15,11 +15,14 @@ export async function GET() {
   }
 
   // Test 2: Environment variables
+  // NOTE: instrumentation.ts may have overwritten DATABASE_URL to file:// for Prisma.
+  // _TURSO_DATABASE_URL holds the real Turso URL.
+  const tursoUrl = process.env._TURSO_DATABASE_URL || ''
   const dbUrl = process.env.DATABASE_URL || ''
   const dbToken = process.env.DATABASE_AUTH_TOKEN || ''
   results.env = {
-    status: dbUrl ? 'OK' : 'FAIL',
-    detail: `DATABASE_URL="${dbUrl.slice(0, 50)}${dbUrl.length > 50 ? '...' : ''}" (${dbUrl.length} chars), TOKEN="${dbToken ? 'SET' : 'NOT SET'}", NODE_ENV="${process.env.NODE_ENV || 'NOT SET'}"`,
+    status: tursoUrl ? 'OK' : 'FAIL',
+    detail: `_TURSO_DATABASE_URL="${tursoUrl.slice(0, 50)}${tursoUrl.length > 50 ? '...' : ''}" (${tursoUrl.length} chars), DATABASE_URL="${dbUrl.slice(0, 30)}", TOKEN="${dbToken ? 'SET' : 'NOT SET'}", NODE_ENV="${process.env.NODE_ENV || 'NOT SET'}"`,
   }
 
   // Test 3: @prisma/client loads
@@ -48,8 +51,9 @@ export async function GET() {
 
   // Test 6: Direct DB connection test (same logic as db.ts)
   try {
-    if (dbUrl.startsWith('libsql://')) {
-      process.env.TURSO_DATABASE_URL = dbUrl
+    if (tursoUrl.startsWith('libsql://')) {
+      // Turso mode — use adapter
+      process.env.TURSO_DATABASE_URL = tursoUrl
       if (dbToken) process.env.TURSO_AUTH_TOKEN = dbToken
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -59,13 +63,14 @@ export async function GET() {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { PrismaClient } = require('@prisma/client') as any
 
-      const libsql = createClient({ url: dbUrl, authToken: dbToken || undefined })
+      const libsql = createClient({ url: tursoUrl, authToken: dbToken || undefined })
       const adapter = new PrismaLibSQL(libsql)
       const testClient = new PrismaClient({ adapter })
       const count = await testClient.user.count()
       await testClient.$disconnect()
       results.dbConnection = { status: 'OK', detail: `Turso connected. Users: ${count}` }
     } else if (dbUrl.startsWith('file:')) {
+      // Local SQLite mode
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { PrismaClient } = require('@prisma/client') as any
       const testClient = new PrismaClient({ datasourceUrl: dbUrl })
@@ -73,7 +78,7 @@ export async function GET() {
       await testClient.$disconnect()
       results.dbConnection = { status: 'OK', detail: `SQLite file. Users: ${count}` }
     } else {
-      results.dbConnection = { status: 'SKIP', detail: `Unknown URL type: ${dbUrl.slice(0, 15)}` }
+      results.dbConnection = { status: 'SKIP', detail: `Unknown URL type` }
     }
   } catch (e) {
     results.dbConnection = { status: 'FAIL', detail: String(e instanceof Error ? e.message : e) }

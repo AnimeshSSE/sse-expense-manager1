@@ -4,23 +4,18 @@
 //
 // HOW IT WORKS:
 //
-// 1. The Prisma schema has a HARDCODED datasource URL: "file:./db/custom.db"
-//    This is critical for Vercel. The generated Prisma client bakes in this
-//    URL at build time — it never calls env("DATABASE_URL") at runtime.
+// 1. instrumentation.ts runs FIRST (before any module loads):
+//    - If DATABASE_URL is libsql://, it saves the real URL in _TURSO_DATABASE_URL
+//      and overwrites DATABASE_URL with a safe SQLite path for Prisma validation
 //
-// 2. For PRODUCTION (Turso via libsql adapter):
-//    - The adapter handles ALL database connections
-//    - Prisma's hardcoded URL is used only for schema validation
-//    - Actual queries go through @prisma/adapter-libsql → @libsql/client
+// 2. This module uses _TURSO_DATABASE_URL to decide between Turso vs SQLite:
+//    - Turso: creates libsql adapter + PrismaClient({ adapter })
+//    - SQLite: creates PrismaClient({ datasourceUrl })
 //
-// 3. For LOCAL DEV (SQLite file):
-//    - We override the schema URL with datasourceUrl option
-//    - No adapter needed — Prisma connects directly via better-sqlite3
+// 3. Lazy Proxy pattern: PrismaClient is NOT created at import time.
+//    It's created on first query (inside request handler where env vars exist).
 //
-// 4. Lazy Proxy pattern:
-//    - PrismaClient is NOT created at module load time
-//    - It's created on first query, in the request context where env vars are available
-//    - This prevents crashes during Vercel's module bundling/evaluation phase
+// 4. import type for PrismaClient ensures @prisma/client never loads at module time.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { PrismaClient } from '@prisma/client'
@@ -28,23 +23,24 @@ import type { PrismaClient } from '@prisma/client'
 type DB = PrismaClient
 
 function createTursoClient(): DB {
-  const url = process.env.DATABASE_URL
-  const authToken = process.env.DATABASE_AUTH_TOKEN
+  // Read from _TURSO_DATABASE_URL (set by instrumentation.ts)
+  // because DATABASE_URL has been overwritten to a SQLite path
+  const url = process.env._TURSO_DATABASE_URL || ''
+  const authToken = process.env.DATABASE_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN
 
-  if (!url || !url.startsWith('libsql://')) {
+  if (!url.startsWith('libsql://')) {
     throw new Error(
-      `[db] Expected DATABASE_URL to start with libsql://, got: "${url?.slice(0, 30) || 'undefined'}"`
+      `[db] _TURSO_DATABASE_URL is not a valid libsql URL: "${url.slice(0, 30)}"`
     )
   }
 
-  // Set fallback env vars that @libsql/client reads internally
+  // Set fallback env vars that @libsql/client may read internally
   process.env.TURSO_DATABASE_URL = url
   if (authToken) {
     process.env.TURSO_AUTH_TOKEN = authToken
   }
 
-  // Dynamic require — runs at function call time (inside request handler),
-  // NOT at module load time. This ensures env vars are available.
+  // Dynamic require — runs at function call time, NOT at module load time
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaLibSQL } = require('@prisma/adapter-libsql') as any
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -60,7 +56,7 @@ function createTursoClient(): DB {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaClient } = require('@prisma/client') as any
 
-  // adapter handles the connection. Schema's hardcoded URL passes validation.
+  // adapter handles ALL queries. Schema URL (file:./db/custom.db) used for validation only.
   return new PrismaClient({ adapter, log: ['error'] })
 }
 
@@ -70,14 +66,13 @@ function createLocalClient(): DB {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaClient } = require('@prisma/client') as any
 
-  // datasourceUrl overrides the schema's hardcoded URL
   return new PrismaClient({
     datasourceUrl: url,
     log: ['error'],
   })
 }
 
-// ── Singleton + Proxy ─────────────────────────────────────────────────────
+// ── Singleton + Lazy Proxy ─────────────────────────────────────────────────
 
 const globalForDb = globalThis as unknown as { _db?: DB }
 
@@ -94,9 +89,9 @@ function getDb(): DB {
   }
 
   try {
-    const url = process.env.DATABASE_URL || ''
-
-    if (url.startsWith('libsql://')) {
+    // Check _TURSO_DATABASE_URL (set by instrumentation.ts before any module loads).
+    // This is the REAL Turso URL. DATABASE_URL has been overwritten to a SQLite path.
+    if (process.env._TURSO_DATABASE_URL?.startsWith('libsql://')) {
       _db = createTursoClient()
     } else {
       _db = createLocalClient()
@@ -113,8 +108,7 @@ function getDb(): DB {
   }
 }
 
-// Exported as a Proxy so the actual PrismaClient is created lazily
-// on first property access (i.e., first query), never at import time.
+// Exported as a Proxy — PrismaClient created lazily on first property access
 export const db = new Proxy({} as DB, {
   get(_target, prop, receiver) {
     const actual = getDb()

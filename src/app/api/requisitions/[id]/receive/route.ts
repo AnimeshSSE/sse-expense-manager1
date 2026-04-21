@@ -1,54 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { getSession } from '@/lib/auth'
-import { checkPermission } from '@/lib/permissions'
-import { createAuditLog } from '@/lib/audit'
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { createAuditLog, formatAuditValues } from '@/lib/audit';
 
-// POST /api/requisitions/[id]/receive
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function POST(_request: NextRequest, context: RouteContext) {
   try {
-    const session = await getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    if (!checkPermission(session.role, 'VIEW_ALL_MIRS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { id } = await params
-
-    const existing = await db.requisition.findUnique({ where: { id } })
-    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    if (existing.status !== 'ORDERED') {
-      return NextResponse.json({ error: 'Requisition is not in ORDERED status' }, { status: 400 })
+    if (!checkPermission(session.role, 'RECEIVE_MIR')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const requisition = await db.requisition.update({
+    const { id } = await context.params;
+
+    const requisition = await db.requisition.findUnique({ where: { id } });
+    if (!requisition) {
+      return NextResponse.json({ error: 'Requisition not found' }, { status: 404 });
+    }
+
+    if (requisition.status !== 'ORDERED') {
+      return NextResponse.json(
+        { error: 'Requisition must be in ORDERED status to receive' },
+        { status: 400 }
+      );
+    }
+
+    const oldValues = formatAuditValues({ status: requisition.status });
+
+    const updatedRequisition = await db.requisition.update({
       where: { id },
-      data: { status: 'RECEIVED' },
-      include: {
-        site: { include: { client: true } },
-        user: { select: { id: true, name: true, email: true } },
-        stockManagerApprovedBy: { select: { id: true, name: true } },
-        adminApprovedBy: { select: { id: true, name: true } },
-        boqItems: { orderBy: { createdAt: 'asc' } },
+      data: {
+        status: 'RECEIVED',
       },
-    })
+      include: {
+        site: {
+          include: { client: { select: { id: true, name: true } } },
+        },
+        user: { select: { id: true, name: true, email: true } },
+        boqItems: true,
+      },
+    });
+
+    const newValues = formatAuditValues({ status: updatedRequisition.status });
 
     await createAuditLog({
       userId: session.id,
-      action: 'RECEIVE_REQUISITION',
+      action: 'RECEIVE_MIR',
       entityType: 'REQUISITION',
       entityId: id,
-      oldValues: JSON.stringify({ status: 'ORDERED' }),
-      newValues: JSON.stringify({ status: 'RECEIVED' }),
-    })
+      oldValues,
+      newValues,
+    });
 
-    return NextResponse.json({ data: requisition })
+    return NextResponse.json({ requisition: updatedRequisition });
   } catch (error: any) {
-    console.error('POST /api/requisitions/[id]/receive error:', error)
-    return NextResponse.json({ error: 'Failed to mark requisition as received' }, { status: 500 })
+    console.error('Receive MIR error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

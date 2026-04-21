@@ -1,51 +1,58 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { getSession } from '@/lib/auth'
-import { checkPermission } from '@/lib/permissions'
-import { createAuditLog } from '@/lib/audit'
-import { ExpenseStatus } from '@/lib/prisma-constants'
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { createAuditLog, formatAuditValues } from '@/lib/audit';
 
-// POST /api/expenses/[id]/approve-admin
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function POST(_request: NextRequest, context: RouteContext) {
   try {
-    const session = await getSession()
+    const session = await getSession();
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     if (!checkPermission(session.role, 'ADMIN_APPROVE_EXPENSE')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id } = await params
-    const expense = await db.expense.findUnique({ where: { id } })
+    const { id } = await context.params;
+
+    const expense = await db.expense.findUnique({ where: { id } });
     if (!expense) {
-      return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     }
 
-    if (expense.status !== ExpenseStatus.ACCOUNTANT_APPROVED) {
-      return NextResponse.json({ error: `Cannot approve: expense status is ${expense.status}, expected ACCOUNTANT_APPROVED` }, { status: 400 })
+    if (expense.status !== 'ACCOUNTANT_APPROVED') {
+      return NextResponse.json(
+        { error: 'Expense must be in ACCOUNTANT_APPROVED status' },
+        { status: 400 }
+      );
     }
 
-    const oldValues = JSON.stringify(expense)
-    const updated = await db.expense.update({
+    const oldValues = formatAuditValues({ status: expense.status });
+
+    const updatedExpense = await db.expense.update({
       where: { id },
       data: {
-        status: ExpenseStatus.ADMIN_APPROVED,
+        status: 'ADMIN_APPROVED',
         adminApprovedById: session.id,
         adminApprovedAt: new Date(),
       },
       include: {
-        site: { include: { client: true } },
-        category: true,
+        site: {
+          include: { client: { select: { id: true, name: true } } },
+        },
+        category: { select: { id: true, name: true } },
         user: { select: { id: true, name: true, email: true } },
-        accountantApprovedBy: { select: { id: true, name: true } },
         adminApprovedBy: { select: { id: true, name: true } },
       },
-    })
+    });
+
+    const newValues = formatAuditValues({
+      status: updatedExpense.status,
+      adminApprovedById: session.id,
+    });
 
     await createAuditLog({
       userId: session.id,
@@ -53,12 +60,12 @@ export async function POST(
       entityType: 'EXPENSE',
       entityId: id,
       oldValues,
-      newValues: JSON.stringify(updated),
-    })
+      newValues,
+    });
 
-    return NextResponse.json({ data: updated })
-  } catch (error) {
-    console.error('POST /api/expenses/[id]/approve-admin error:', error)
-    return NextResponse.json({ error: 'Failed to approve expense' }, { status: 500 })
+    return NextResponse.json({ expense: updatedExpense });
+  } catch (error: any) {
+    console.error('Admin approve expense error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

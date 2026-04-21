@@ -1,30 +1,46 @@
 'use client'
 
-import { createContext, useContext, useState, type ReactNode } from 'react'
-import { translations, type Language } from '@/lib/i18n'
+import { createContext, useContext, useState, useCallback, ReactNode } from 'react'
+import { type Language, t as translate } from '@/lib/i18n'
 
-interface LanguageContextType {
-  lang: Language
-  t: typeof translations.en
-  setLang: (lang: Language) => void
+interface LanguageContextValue {
+  language: Language
+  setLanguage: (lang: Language) => void
+  t: (key: string) => string
 }
 
-const LanguageContext = createContext<LanguageContextType | null>(null)
+const LanguageContext = createContext<LanguageContextValue>({
+  language: 'en',
+  setLanguage: () => {},
+  t: (key: string) => translate(key, 'en'),
+})
+
+function getInitialLanguage(): Language {
+  if (typeof window === 'undefined') return 'en'
+  const saved = localStorage.getItem('preferred-language') as Language | null
+  if (saved && (saved === 'en' || saved === 'hi')) {
+    return saved
+  }
+  return 'en'
+}
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Language>('en')
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-  const t = translations[lang] as typeof translations.en
+  const [language, setLanguageState] = useState<Language>(getInitialLanguage)
+
+  const setLanguage = useCallback((lang: Language) => {
+    setLanguageState(lang)
+    localStorage.setItem('preferred-language', lang)
+  }, [])
+
+  const t = (key: string) => translate(key, language)
 
   return (
-    <LanguageContext.Provider value={{ lang, t, setLang }}>
+    <LanguageContext.Provider value={{ language, setLanguage, t }}>
       {children}
     </LanguageContext.Provider>
   )
 }
 
 export function useLanguage() {
-  const ctx = useContext(LanguageContext)
-  if (!ctx) throw new Error('useLanguage must be used within LanguageProvider')
-  return ctx
+  return useContext(LanguageContext)
 }

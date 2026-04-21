@@ -1,26 +1,34 @@
-import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { NextResponse } from 'next/server';
+import { getSession, getPermissions } from '@/lib/auth';
 
 export async function GET() {
   try {
-    const user = await getSession()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    return NextResponse.json({ user })
-  } catch (error) {
-    console.error('Get me error:', error instanceof Error ? error.message : error)
-    return NextResponse.json({ error: 'Failed to get user', details: error instanceof Error ? error.message : 'Unknown' }, { status: 500 })
-  }
-}
+    const session = await getSession();
 
-// Health check to verify DB connection and seed status
-export async function OPTIONS() {
-  try {
-    const count = await db.user.count()
-    return NextResponse.json({ status: 'ok', db: 'connected', userCount: count })
-  } catch (error) {
-    return NextResponse.json({ status: 'error', db: 'disconnected', details: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      );
+    }
+
+    const permissions = getPermissions(session.role);
+
+    return NextResponse.json({
+      user: {
+        id: session.id,
+        email: session.email,
+        name: session.name,
+        role: session.role,
+        isActive: session.isActive,
+      },
+      permissions,
+    });
+  } catch (error: any) {
+    console.error('Get session error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

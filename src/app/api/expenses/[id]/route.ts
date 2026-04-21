@@ -1,142 +1,133 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { getSession } from '@/lib/auth'
-import { checkPermission } from '@/lib/permissions'
-import { createAuditLog } from '@/lib/audit'
-import { ExpenseStatus, PaymentMethod } from '@/lib/prisma-constants'
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { ExpenseStatus } from '@prisma/client';
 
-// GET /api/expenses/[id] — single expense with full relations
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function GET(_request: NextRequest, context: RouteContext) {
   try {
-    const session = await getSession()
+    const session = await getSession();
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { id } = await params
+    const { id } = await context.params;
+
     const expense = await db.expense.findUnique({
       where: { id },
       include: {
-        site: { include: { client: true } },
-        category: true,
-        user: { select: { id: true, name: true, email: true, role: true } },
+        site: {
+          include: { client: { select: { id: true, name: true } } },
+        },
+        category: { select: { id: true, name: true } },
+        user: { select: { id: true, name: true, email: true } },
         accountantApprovedBy: { select: { id: true, name: true } },
         adminApprovedBy: { select: { id: true, name: true } },
       },
-    })
+    });
 
     if (!expense) {
-      return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     }
 
-    // Ownership check
-    if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES') && expense.userId !== session.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Check access: user can only view own unless has VIEW_ALL_EXPENSES
+    if (
+      !checkPermission(session.role, 'VIEW_ALL_EXPENSES') &&
+      expense.userId !== session.id
+    ) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    return NextResponse.json({ data: expense })
-  } catch (error) {
-    console.error('GET /api/expenses/[id] error:', error)
-    return NextResponse.json({ error: 'Failed to fetch expense' }, { status: 500 })
+    return NextResponse.json({ expense });
+  } catch (error: any) {
+    console.error('Get expense error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// PUT /api/expenses/[id] — update expense
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
-    const session = await getSession()
+    const session = await getSession();
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { id } = await params
-    const existing = await db.expense.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
+    const { id } = await context.params;
+
+    const existingExpense = await db.expense.findUnique({ where: { id } });
+    if (!existingExpense) {
+      return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     }
 
-    // Only PENDING, RETURNED, or REJECTED can be edited
-    const editableStatuses: string[] = [ExpenseStatus.PENDING, ExpenseStatus.RETURNED, ExpenseStatus.REJECTED]
-    if (!editableStatuses.includes(existing.status as string)) {
-      return NextResponse.json({ error: `Cannot edit expense with status: ${existing.status}` }, { status: 400 })
+    // Only own expense and only PENDING or RETURNED
+    if (existingExpense.userId !== session.id) {
+      return NextResponse.json({ error: 'You can only edit your own expenses' }, { status: 403 });
     }
 
-    // Ownership check
-    const isOwner = existing.userId === session.id
-    const canEditAll = checkPermission(session.role, 'VIEW_ALL_EXPENSES')
-    if (!isOwner && !canEditAll) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (
+      existingExpense.status !== 'PENDING' &&
+      existingExpense.status !== 'RETURNED'
+    ) {
+      return NextResponse.json(
+        { error: 'Can only edit PENDING or RETURNED expenses' },
+        { status: 400 }
+      );
     }
 
-    const body = await req.json()
+    const body = await request.json();
     const {
       siteId, categoryId, amount, description, expenseDate,
-      sellerName, invoiceNumber, paymentMethod, notes,
-    } = body
+      sellerName, invoiceNumber, paymentMethod,
+      receiptUrl, receiptFileName, notes,
+    } = body;
 
-    // Validate if provided
-    if (siteId) {
-      const site = await db.site.findUnique({ where: { id: siteId } })
-      if (!site) return NextResponse.json({ error: 'Site not found' }, { status: 404 })
-    }
-    if (categoryId) {
-      const cat = await db.category.findUnique({ where: { id: categoryId } })
-      if (!cat) return NextResponse.json({ error: 'Category not found' }, { status: 404 })
-    }
-    if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
-      return NextResponse.json({ error: 'Amount must be a positive number' }, { status: 400 })
-    }
+    const oldValues = formatAuditValues({
+      siteId: existingExpense.siteId,
+      categoryId: existingExpense.categoryId,
+      amount: existingExpense.amount,
+      description: existingExpense.description,
+      expenseDate: existingExpense.expenseDate,
+      sellerName: existingExpense.sellerName,
+      invoiceNumber: existingExpense.invoiceNumber,
+      paymentMethod: existingExpense.paymentMethod,
+      notes: existingExpense.notes,
+    });
 
-    // If expenseDate is changing, recalculate late submission
-    let isLateSubmission = existing.isLateSubmission
-    let daysLate = existing.daysLate
-    if (expenseDate) {
-      const expenseDateObj = new Date(expenseDate)
-      const now = new Date()
-      const diffMs = now.getTime() - expenseDateObj.getTime()
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-      isLateSubmission = diffDays > 7
-      daysLate = isLateSubmission ? diffDays : 0
-    }
+    // If status was RETURNED, set back to PENDING on edit
+    const updateData: any = {
+      ...(siteId !== undefined && { siteId }),
+      ...(categoryId !== undefined && { categoryId }),
+      ...(amount !== undefined && { amount: parseFloat(amount) }),
+      ...(description !== undefined && { description }),
+      ...(expenseDate !== undefined && { expenseDate: new Date(expenseDate) }),
+      ...(sellerName !== undefined && { sellerName: sellerName || null }),
+      ...(invoiceNumber !== undefined && { invoiceNumber: invoiceNumber || null }),
+      ...(paymentMethod !== undefined && { paymentMethod }),
+      ...(receiptUrl !== undefined && { receiptUrl: receiptUrl || null }),
+      ...(receiptFileName !== undefined && { receiptFileName: receiptFileName || null }),
+      ...(notes !== undefined && { notes: notes || null }),
+    };
 
-    const oldValues = JSON.stringify(existing)
-
-    const updateData: Record<string, unknown> = {}
-    if (siteId !== undefined) updateData.siteId = siteId
-    if (categoryId !== undefined) updateData.categoryId = categoryId
-    if (amount !== undefined) updateData.amount = amount
-    if (description !== undefined) updateData.description = description
-    if (expenseDate !== undefined) updateData.expenseDate = new Date(expenseDate)
-    if (sellerName !== undefined) updateData.sellerName = sellerName || null
-    if (invoiceNumber !== undefined) updateData.invoiceNumber = invoiceNumber || null
-    if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod as PaymentMethod
-    if (notes !== undefined) updateData.notes = notes || null
-    if (expenseDate !== undefined) {
-      updateData.isLateSubmission = isLateSubmission
-      updateData.daysLate = daysLate
-    }
-    // If status is RETURNED and we're editing, we might want to reset reasons
-    if (existing.status === ExpenseStatus.RETURNED) {
-      updateData.returnReason = null
+    if (existingExpense.status === 'RETURNED') {
+      updateData.status = 'PENDING';
+      updateData.returnReason = null;
     }
 
     const expense = await db.expense.update({
       where: { id },
       data: updateData,
       include: {
-        site: { include: { client: true } },
-        category: true,
+        site: {
+          include: { client: { select: { id: true, name: true } } },
+        },
+        category: { select: { id: true, name: true } },
         user: { select: { id: true, name: true, email: true } },
-        accountantApprovedBy: { select: { id: true, name: true } },
-        adminApprovedBy: { select: { id: true, name: true } },
       },
-    })
+    });
+
+    const newValues = formatAuditValues(updateData);
 
     await createAuditLog({
       userId: session.id,
@@ -144,60 +135,61 @@ export async function PUT(
       entityType: 'EXPENSE',
       entityId: id,
       oldValues,
-      newValues: JSON.stringify(expense),
-    })
+      newValues,
+    });
 
-    return NextResponse.json({ data: expense })
-  } catch (error) {
-    console.error('PUT /api/expenses/[id] error:', error)
-    return NextResponse.json({ error: 'Failed to update expense' }, { status: 500 })
+    return NextResponse.json({ expense });
+  } catch (error: any) {
+    console.error('Update expense error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// DELETE /api/expenses/[id]
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    const session = await getSession()
+    const session = await getSession();
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { id } = await params
-    const existing = await db.expense.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
+    const { id } = await context.params;
+
+    const expense = await db.expense.findUnique({ where: { id } });
+    if (!expense) {
+      return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     }
 
-    // Only PENDING or REJECTED can be deleted
-    if (existing.status !== ExpenseStatus.PENDING && existing.status !== ExpenseStatus.REJECTED) {
-      return NextResponse.json({ error: `Cannot delete expense with status: ${existing.status}` }, { status: 400 })
+    if (expense.userId !== session.id) {
+      return NextResponse.json({ error: 'You can only delete your own expenses' }, { status: 403 });
     }
 
-    // Ownership check
-    const isOwner = existing.userId === session.id
-    const canEditAll = checkPermission(session.role, 'VIEW_ALL_EXPENSES')
-    if (!isOwner && !canEditAll) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (expense.status !== 'PENDING') {
+      return NextResponse.json(
+        { error: 'Can only delete PENDING expenses' },
+        { status: 400 }
+      );
     }
 
-    // Delete comments first
-    await db.comment.deleteMany({ where: { entityType: 'EXPENSE', entityId: id } })
-    await db.expense.delete({ where: { id } })
+    const oldValues = formatAuditValues({
+      id: expense.id,
+      amount: expense.amount,
+      description: expense.description,
+      status: expense.status,
+    });
+
+    await db.expense.delete({ where: { id } });
 
     await createAuditLog({
       userId: session.id,
       action: 'DELETE_EXPENSE',
       entityType: 'EXPENSE',
       entityId: id,
-      oldValues: JSON.stringify(existing),
-    })
+      oldValues,
+    });
 
-    return NextResponse.json({ message: 'Expense deleted successfully' })
-  } catch (error) {
-    console.error('DELETE /api/expenses/[id] error:', error)
-    return NextResponse.json({ error: 'Failed to delete expense' }, { status: 500 })
+    return NextResponse.json({ message: 'Expense deleted successfully' });
+  } catch (error: any) {
+    console.error('Delete expense error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

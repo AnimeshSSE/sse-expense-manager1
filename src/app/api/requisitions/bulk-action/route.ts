@@ -1,111 +1,119 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { getSession } from '@/lib/auth'
-import { checkPermission } from '@/lib/permissions'
-import { createAuditLog } from '@/lib/audit'
-import type { Prisma } from '@prisma/client'
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { RequisitionStatus } from '@prisma/client';
 
-// POST /api/requisitions/bulk-action
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    if (!checkPermission(session.role, 'VIEW_ALL_MIRS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { ids, action, reason } = await req.json()
+    const body = await request.json();
+    const { ids, action } = body;
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return NextResponse.json({ error: 'IDs are required' }, { status: 400 })
+      return NextResponse.json({ error: 'IDs array is required' }, { status: 400 });
     }
 
-    if (!['approve_stock_manager', 'approve_admin', 'reject', 'return'].includes(action)) {
-      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    if (!['approve-stock-manager', 'approve-admin', 'reject', 'order'].includes(action)) {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
-    if ((action === 'reject' || action === 'return') && !reason) {
-      return NextResponse.json({ error: 'Reason is required for reject/return actions' }, { status: 400 })
+    // Permission checks
+    if (action === 'approve-stock-manager' && session.role !== 'STOCK_MANAGER' && session.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (action === 'approve-admin' && session.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (action === 'reject' && session.role !== 'STOCK_MANAGER' && session.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (action === 'order' && session.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const requisitions = await db.requisition.findMany({
-      where: { id: { in: ids } },
-    })
+    let updatedCount = 0;
+    let errors: string[] = [];
 
-    const results: { id: string; success: boolean; error?: string }[] = []
-    let processedCount = 0
-
-    for (const reqItem of requisitions) {
+    for (const id of ids) {
       try {
-        const updateData: any = {}
-
-        switch (action) {
-          case 'approve_stock_manager':
-            if (reqItem.status !== 'PENDING') {
-              results.push({ id: reqItem.id, success: false, error: `Not in PENDING status` })
-              continue
-            }
-            updateData.status = 'STOCK_MANAGER_APPROVED'
-            updateData.stockManagerApprovedById = session.id
-            updateData.stockManagerApprovedAt = new Date()
-            break
-
-          case 'approve_admin':
-            if (reqItem.status !== 'STOCK_MANAGER_APPROVED') {
-              results.push({ id: reqItem.id, success: false, error: `Not in STOCK_MANAGER_APPROVED status` })
-              continue
-            }
-            updateData.status = 'ADMIN_APPROVED'
-            updateData.adminApprovedById = session.id
-            updateData.adminApprovedAt = new Date()
-            break
-
-          case 'reject':
-            if (!['PENDING', 'STOCK_MANAGER_APPROVED', 'ADMIN_APPROVED'].includes(reqItem.status)) {
-              results.push({ id: reqItem.id, success: false, error: `Cannot reject in ${reqItem.status} status` })
-              continue
-            }
-            updateData.status = 'REJECTED'
-            updateData.rejectionReason = reason
-            break
-
-          case 'return':
-            if (!['PENDING', 'STOCK_MANAGER_APPROVED', 'ADMIN_APPROVED'].includes(reqItem.status)) {
-              results.push({ id: reqItem.id, success: false, error: `Cannot return in ${reqItem.status} status` })
-              continue
-            }
-            updateData.status = 'RETURNED'
-            updateData.returnReason = reason
-            break
+        const req = await db.requisition.findUnique({ where: { id } });
+        if (!req) {
+          errors.push(`${id}: not found`);
+          continue;
         }
 
-        await db.requisition.update({
-          where: { id: reqItem.id },
-          data: updateData,
-        })
+        const updateData: any = {};
+        let newStatus: RequisitionStatus | null = null;
+
+        switch (action) {
+          case 'approve-stock-manager':
+            if (req.status !== 'PENDING') {
+              errors.push(`${id}: status is ${req.status}, expected PENDING`);
+              continue;
+            }
+            updateData.status = 'STOCK_MANAGER_APPROVED';
+            updateData.stockManagerApprovedById = session.id;
+            updateData.stockManagerApprovedAt = new Date();
+            newStatus = 'STOCK_MANAGER_APPROVED';
+            break;
+          case 'approve-admin':
+            if (req.status !== 'STOCK_MANAGER_APPROVED') {
+              errors.push(`${id}: status is ${req.status}, expected STOCK_MANAGER_APPROVED`);
+              continue;
+            }
+            updateData.status = 'ADMIN_APPROVED';
+            updateData.adminApprovedById = session.id;
+            updateData.adminApprovedAt = new Date();
+            newStatus = 'ADMIN_APPROVED';
+            break;
+          case 'reject':
+            if (!['PENDING', 'STOCK_MANAGER_APPROVED'].includes(req.status)) {
+              errors.push(`${id}: status is ${req.status}, cannot reject`);
+              continue;
+            }
+            updateData.status = 'REJECTED';
+            updateData.rejectionReason = 'Bulk rejected';
+            newStatus = 'REJECTED';
+            break;
+          case 'order':
+            if (req.status !== 'ADMIN_APPROVED') {
+              errors.push(`${id}: status is ${req.status}, expected ADMIN_APPROVED`);
+              continue;
+            }
+            updateData.status = 'ORDERED';
+            newStatus = 'ORDERED';
+            break;
+        }
+
+        await db.requisition.update({ where: { id }, data: updateData });
 
         await createAuditLog({
           userId: session.id,
-          action: `BULK_${action.toUpperCase()}_REQUISITION`,
+          action: `BULK_${action.toUpperCase().replace(/-/g, '_')}_REQUISITION`,
           entityType: 'REQUISITION',
-          entityId: reqItem.id,
-          oldValues: JSON.stringify({ status: reqItem.status }),
-          newValues: JSON.stringify({ status: updateData.status, reason: reason || undefined }),
-        })
+          entityId: id,
+          newValues: formatAuditValues({ status: newStatus }),
+        });
 
-        results.push({ id: reqItem.id, success: true })
-        processedCount++
-      } catch (err: any) {
-        results.push({ id: reqItem.id, success: false, error: err.message })
+        updatedCount++;
+      } catch (e: any) {
+        errors.push(`${id}: ${e.message}`);
       }
     }
 
     return NextResponse.json({
-      data: { processed: processedCount, total: ids.length, results },
-    })
+      success: true,
+      updatedCount,
+      totalRequested: ids.length,
+      errors: errors.length > 0 ? errors : undefined,
+    });
   } catch (error: any) {
-    console.error('POST /api/requisitions/bulk-action error:', error)
-    return NextResponse.json({ error: 'Failed to perform bulk action' }, { status: 500 })
+    console.error('Bulk requisition action error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

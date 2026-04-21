@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { getSession, hashPassword } from '@/lib/auth'
-import { checkPermission } from '@/lib/permissions'
-import { createAuditLog } from '@/lib/audit'
+import { NextRequest, NextResponse } from 'next/server';
+import { getSession, checkPermission, hashPassword } from '@/lib/auth';
+import { db } from '@/lib/db';
 
 export async function GET() {
   try {
-    const session = await getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
     if (!checkPermission(session.role, 'MANAGE_USERS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const users = await db.user.findMany({
@@ -21,48 +22,64 @@ export async function GET() {
         isActive: true,
         lastLogin: true,
         createdAt: true,
-        updatedAt: true,
-        employee: { select: { id: true, employeeCode: true } },
       },
       orderBy: { createdAt: 'desc' },
-    })
+    });
 
-    return NextResponse.json({ users })
-  } catch (error) {
-    console.error('GET /api/users error:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    return NextResponse.json({ users });
+  } catch (error: any) {
+    console.error('Get users error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
     if (!checkPermission(session.role, 'MANAGE_USERS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json()
-    const { name, email, role, password, isActive } = body
+    const body = await request.json();
+    const { email, name, password, role } = body;
 
-    if (!name || !email || !password) {
-      return NextResponse.json({ error: 'Name, email, and password are required' }, { status: 400 })
+    if (!email || !name || !password) {
+      return NextResponse.json(
+        { error: 'Email, name, and password are required' },
+        { status: 400 }
+      );
     }
 
-    const existing = await db.user.findUnique({ where: { email } })
-    if (existing) {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: 'Password must be at least 6 characters' },
+        { status: 400 }
+      );
     }
 
-    const hashedPassword = hashPassword(password)
+    const existingUser = await db.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'User with this email already exists' },
+        { status: 409 }
+      );
+    }
+
+    const hashedPassword = await hashPassword(password);
 
     const user = await db.user.create({
       data: {
+        email: email.toLowerCase(),
         name,
-        email,
         password: hashedPassword,
         role: role || 'USER',
-        isActive: isActive !== false,
       },
       select: {
         id: true,
@@ -73,19 +90,11 @@ export async function POST(request: NextRequest) {
         lastLogin: true,
         createdAt: true,
       },
-    })
+    });
 
-    await createAuditLog({
-      userId: session.id,
-      action: 'CREATE_USER',
-      entityType: 'User',
-      entityId: user.id,
-      newValues: JSON.stringify({ name: user.name, email: user.email, role: user.role }),
-    })
-
-    return NextResponse.json({ user }, { status: 201 })
-  } catch (error) {
-    console.error('POST /api/users error:', error)
-    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
+    return NextResponse.json({ user }, { status: 201 });
+  } catch (error: any) {
+    console.error('Create user error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

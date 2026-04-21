@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission, hashPassword } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { Role, PaymentMethod, Priority, CategoryType } from '@prisma/client';
+import { Role, PaymentMethod, Priority, CategoryType } from '@/lib/prisma-constants';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,11 +21,17 @@ export async function POST(request: NextRequest) {
     if (existingUsers > 0 && forceReseed) {
       await db.$transaction([
         db.auditLog.deleteMany(),
+        db.attendance.deleteMany(),
+        db.salary.deleteMany(),
+        db.leave.deleteMany(),
         db.bOQItem.deleteMany(),
         db.expense.deleteMany(),
+        db.advance.deleteMany(),
         db.requisition.deleteMany(),
+        db.comment.deleteMany(),
         db.site.deleteMany(),
         db.category.deleteMany(),
+        db.employee.deleteMany(),
         db.client.deleteMany(),
         db.user.deleteMany(),
       ]);

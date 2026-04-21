@@ -47,5 +47,18 @@ test
 prompt
 
 server.log
+dev.log
+
 # Skills directory
-/skills/
+/skills
+
+# Database
+db/custom.db
+db/*.db-journal
+
+# Local only
+Caddyfile
+upload/
+scripts/
+worklog.md
+agent-ctx/

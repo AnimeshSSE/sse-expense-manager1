@@ -1,70 +1,59 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
+import { ExpenseStatus } from '@/lib/prisma-constants'
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function POST(request: NextRequest, context: RouteContext) {
+// POST /api/expenses/[id]/return
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
+    const session = await getSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Any approver can return
-    const canReturn =
-      checkPermission(session.role, 'ACCOUNTANT_APPROVE_EXPENSE') ||
-      checkPermission(session.role, 'ADMIN_APPROVE_EXPENSE');
-
-    if (!canReturn) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!checkPermission(session.role, 'VIEW_ALL_EXPENSES')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await context.params;
-    const body = await request.json();
-    const { reason } = body;
+    const { id } = await params
+    const body = await req.json()
+    const { reason } = body
 
-    if (!reason) {
-      return NextResponse.json(
-        { error: 'Return reason is required' },
-        { status: 400 }
-      );
+    if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+      return NextResponse.json({ error: 'Return reason is required' }, { status: 400 })
     }
 
-    const expense = await db.expense.findUnique({ where: { id } });
+    const expense = await db.expense.findUnique({ where: { id } })
     if (!expense) {
-      return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
     }
 
-    if (expense.status === 'REJECTED' || expense.status === 'PAID') {
-      return NextResponse.json(
-        { error: 'Cannot return an already rejected or paid expense' },
-        { status: 400 }
-      );
+    // Can return PENDING, ACCOUNTANT_APPROVED
+    const returnableStatuses: string[] = [ExpenseStatus.PENDING, ExpenseStatus.ACCOUNTANT_APPROVED]
+    if (!returnableStatuses.includes(expense.status as string)) {
+      return NextResponse.json({ error: `Cannot return expense with status: ${expense.status}` }, { status: 400 })
     }
 
-    const oldValues = formatAuditValues({ status: expense.status });
-
-    const updatedExpense = await db.expense.update({
+    const oldValues = JSON.stringify(expense)
+    const updated = await db.expense.update({
       where: { id },
       data: {
-        status: 'RETURNED',
-        returnReason: reason,
+        status: ExpenseStatus.RETURNED,
+        returnReason: reason.trim(),
       },
       include: {
-        site: {
-          include: { client: { select: { id: true, name: true } } },
-        },
-        category: { select: { id: true, name: true } },
+        site: { include: { client: true } },
+        category: true,
         user: { select: { id: true, name: true, email: true } },
+        accountantApprovedBy: { select: { id: true, name: true } },
+        adminApprovedBy: { select: { id: true, name: true } },
       },
-    });
-
-    const newValues = formatAuditValues({
-      status: updatedExpense.status,
-      returnReason: reason,
-    });
+    })
 
     await createAuditLog({
       userId: session.id,
@@ -72,12 +61,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entityType: 'EXPENSE',
       entityId: id,
       oldValues,
-      newValues,
-    });
+      newValues: JSON.stringify(updated),
+    })
 
-    return NextResponse.json({ expense: updatedExpense });
-  } catch (error: any) {
-    console.error('Return expense error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ data: updated })
+  } catch (error) {
+    console.error('POST /api/expenses/[id]/return error:', error)
+    return NextResponse.json({ error: 'Failed to return expense' }, { status: 500 })
   }
 }

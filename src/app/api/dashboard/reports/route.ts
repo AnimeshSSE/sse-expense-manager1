@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,29 +27,8 @@ export async function GET(request: NextRequest) {
     if (siteId) where.siteId = siteId;
     if (userId) where.userId = userId;
 
-    // Build the raw SQL conditions safely
-    // Prisma stores DateTime as BigInt (Unix ms). Use unixepoch modifier.
-    const startMs = startDate.getTime();
-    const conditions: string[] = [
-      `expenseDate >= ${startMs}`,
-      `status != 'REJECTED'`,
-    ];
-    if (siteId) conditions.push(`siteId = '${siteId.replace(/'/g, "''")}'`);
-    if (userId) conditions.push(`userId = '${userId.replace(/'/g, "''")}'`);
-    if (clientId) conditions.push(`siteId IN (SELECT id FROM "Site" WHERE clientId = '${clientId.replace(/'/g, "''")}')`);
-
-    const whereClause = conditions.join(' AND ');
-    const sqlQuery = `
-      SELECT strftime('%Y-%m', date(expenseDate / 1000, 'unixepoch', 'localtime')) as month, 
-             SUM(amount) as total, COUNT(*) as count
-      FROM "Expense" 
-      WHERE ${whereClause}
-      GROUP BY strftime('%Y-%m', date(expenseDate / 1000, 'unixepoch', 'localtime'))
-      ORDER BY month DESC
-    `;
-
     // Get expense stats by category and by month
-    const [byCategory, byMonth, bySite, totalAmount, totalCount] = await Promise.all([
+    const [byCategory, bySite, totalAmount] = await Promise.all([
       db.expense.groupBy({
         by: ['categoryId'],
         where,
@@ -57,7 +36,6 @@ export async function GET(request: NextRequest) {
         _count: true,
         orderBy: { _sum: { amount: 'desc' } },
       }),
-      db.$queryRawUnsafe<Array<{ month: string; total: number; count: number }>>(sqlQuery),
       db.expense.groupBy({
         by: ['siteId'],
         where,
@@ -66,7 +44,6 @@ export async function GET(request: NextRequest) {
         orderBy: { _sum: { amount: 'desc' } },
       }),
       db.expense.aggregate({ where, _sum: { amount: true }, _count: true }),
-      db.expense.count({ where }),
     ]);
 
     // Get category names
@@ -87,17 +64,12 @@ export async function GET(request: NextRequest) {
       period,
       startDate: startDate.toISOString(),
       totalAmount: totalAmount._sum.amount || 0,
-      totalCount,
+      totalCount: totalAmount._count,
       byCategory: byCategory.map((c) => ({
         categoryId: c.categoryId,
         categoryName: catMap[c.categoryId] || 'Unknown',
         total: c._sum.amount || 0,
         count: c._count,
-      })),
-      byMonth: byMonth.map((m) => ({
-        month: m.month,
-        total: Number(m.total) || 0,
-        count: Number(m.count) || 0,
       })),
       bySite: bySite.map((s) => ({
         siteId: s.siteId,

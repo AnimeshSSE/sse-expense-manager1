@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, checkPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -65,42 +65,40 @@ export async function GET(request: NextRequest) {
     // If specific userId, only return that user
     const targetUsers = userId ? users.filter((u) => u.id === userId) : users;
 
-    // For each user, calculate total advances (paid) and total expenses (approved/paid)
-    const balances = await Promise.all(
-      targetUsers.map(async (user) => {
-        const userExpenseWhere: Prisma.ExpenseWhereInput = { ...expenseWhere, userId: user.id };
-        const userAdvanceWhere: Prisma.AdvanceWhereInput = { ...advanceWhere, userId: user.id };
+    // Optimized: Use GROUP BY instead of N+1 per-user queries (2N+1 → 3 queries)
+    const [expenseByUser, advanceByUser] = await Promise.all([
+      db.expense.groupBy({
+        by: ['userId'],
+        where: expenseWhere,
+        _sum: { amount: true },
+        _count: true,
+      }),
+      db.advance.groupBy({
+        by: ['userId'],
+        where: advanceWhere,
+        _sum: { amount: true },
+        _count: true,
+      }),
+    ]);
 
-        const [expenseAgg, advanceAgg] = await Promise.all([
-          db.expense.aggregate({
-            where: userExpenseWhere,
-            _sum: { amount: true },
-            _count: true,
-          }),
-          db.advance.aggregate({
-            where: userAdvanceWhere,
-            _sum: { amount: true },
-            _count: true,
-          }),
-        ]);
+    const expenseMap = new Map(expenseByUser.map((e) => [e.userId, { total: e._sum.amount || 0, count: e._count }]));
+    const advanceMap = new Map(advanceByUser.map((a) => [a.userId, { total: a._sum.amount || 0, count: a._count }]));
 
-        const totalExpenses = expenseAgg._sum.amount || 0;
-        const totalAdvances = advanceAgg._sum.amount || 0;
-        const balance = totalAdvances - totalExpenses;
-
-        return {
-          userId: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          totalAdvances,
-          advanceCount: advanceAgg._count,
-          totalExpenses,
-          expenseCount: expenseAgg._count,
-          balance,
-        };
-      })
-    );
+    const balances = targetUsers.map((user) => {
+      const exp = expenseMap.get(user.id) || { total: 0, count: 0 };
+      const adv = advanceMap.get(user.id) || { total: 0, count: 0 };
+      return {
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        totalAdvances: adv.total,
+        advanceCount: adv.count,
+        totalExpenses: exp.total,
+        expenseCount: exp.count,
+        balance: adv.total - exp.total,
+      };
+    });
 
     return NextResponse.json({ balances });
   } catch (error: any) {

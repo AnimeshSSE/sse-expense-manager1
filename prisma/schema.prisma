@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider  = "sqlite"
-  url       = env("DATABASE_URL")
+  url       = "file:../db/custom.db"
 }
 
 // ==================== ENUMS ====================
@@ -40,6 +40,7 @@ enum PaymentMethod {
   UPI
   CREDIT
   OFFICE
+  BANK_TRANSFER
 }
 
 enum Priority {
@@ -61,6 +62,29 @@ enum AdvanceStatus {
   PAID
   REJECTED
   RETURNED
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  HALF_DAY
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LEAVE
+  HOLIDAY
+  WEEK_OFF
 }
 
 // ==================== MODELS ====================
@@ -90,6 +114,8 @@ model User {
   advanceAcctApprovals  Advance[]    @relation("AdvanceAcctApprovals")
   advanceAdminApprovals Advance[]    @relation("AdvanceAdminApprovals")
   advancePaidApprovals  Advance[]    @relation("AdvancePaidBy")
+  employee              Employee?
+  leaveApprovals        Leave[]      @relation("LeaveApprover")
 }
 
 model Client {
@@ -114,12 +140,13 @@ model Site {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  client      Client       @relation(fields: [clientId], references: [id])
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
   expenses    Expense[]
   requisitions Requisition[]
   advances    Advance[]
 
   @@index([clientId])
+  @@index([name])
 }
 
 model Category {
@@ -132,6 +159,7 @@ model Category {
   updatedAt   DateTime     @updatedAt
 
   expenses Expense[]
+  @@index([type])
 }
 
 model Expense {
@@ -171,6 +199,10 @@ model Expense {
   @@index([categoryId])
   @@index([userId])
   @@index([status])
+  @@index([expenseDate])
+  @@index([userId, status])
+  @@index([siteId, status])
+  @@index([isLateSubmission, createdAt])
 }
 
 model Requisition {
@@ -204,6 +236,8 @@ model Requisition {
   @@index([siteId])
   @@index([userId])
   @@index([status])
+  @@index([siteId, status])
+  @@index([userId, status])
 }
 
 model BOQItem {
@@ -253,6 +287,8 @@ model Advance {
   @@index([userId])
   @@index([siteId])
   @@index([status])
+  @@index([userId, status])
+  @@index([siteId, status])
 }
 
 model Comment {
@@ -268,6 +304,109 @@ model Comment {
   @@index([entityType])
   @@index([entityId])
   @@index([userId])
+}
+
+model Employee {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  employeeCode  String   @unique
+  designation   String
+  department    String?
+  phone         String?
+  address       String?
+  joiningDate   DateTime @default(now())
+  baseSalary    Float    @default(0)
+  bankAccount   String?
+  bankName      String?
+  bankIfsc      String?
+  panNumber     String?
+  aadhaarNumber String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id])
+  leaves        Leave[]
+  attendance    Attendance[]
+  salaries      Salary[]
+
+  @@index([userId])
+  @@index([employeeCode])
+  @@index([designation])
+}
+
+model Leave {
+  id              String       @id @default(cuid())
+  employeeId      String
+  type            LeaveType    @default(CASUAL)
+  startDate       DateTime
+  endDate         DateTime
+  totalDays       Float        @default(1)
+  reason          String?
+  status          LeaveStatus  @default(PENDING)
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  approvedBy      User?        @relation("LeaveApprover", fields: [approvedById], references: [id])
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+  @@index([employeeId, status])
+}
+
+model Attendance {
+  id            String           @id @default(cuid())
+  employeeId    String
+  date          DateTime
+  status        AttendanceStatus @default(PRESENT)
+  checkIn       DateTime?
+  checkOut      DateTime?
+  hoursWorked   Float            @default(0)
+  overtimeHours Float            @default(0)
+  notes         String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  employee      Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+}
+
+model Salary {
+  id               String        @id @default(cuid())
+  employeeId       String
+  month            String
+  baseSalary       Float         @default(0)
+  hra              Float         @default(0)
+  da               Float         @default(0)
+  ta               Float         @default(0)
+  bonus            Float         @default(0)
+  deductions       Float         @default(0)
+  pf               Float         @default(0)
+  tds              Float         @default(0)
+  advanceDeduction Float         @default(0)
+  netSalary        Float         @default(0)
+  paymentMethod    PaymentMethod @default(BANK_TRANSFER)
+  status           String        @default("PENDING")
+  paidDate         DateTime?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month])
+  @@index([employeeId])
+  @@index([month])
+  @@index([status])
 }
 
 model AuditLog {

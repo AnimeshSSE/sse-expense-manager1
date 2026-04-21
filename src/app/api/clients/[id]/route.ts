@@ -1,117 +1,149 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession, checkPermission } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { createAuditLog, formatAuditValues } from '@/lib/audit';
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSession } from '@/lib/auth'
+import { checkPermission } from '@/lib/permissions'
+import { createAuditLog } from '@/lib/audit'
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function PUT(request: NextRequest, context: RouteContext) {
+// GET /api/clients/[id] — single client with sites count
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const session = await getSession();
+    const session = await getSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     if (!checkPermission(session.role, 'MANAGE_CLIENTS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { id } = await context.params;
-    const body = await request.json();
-    const { name, description, isActive } = body;
-
-    const existingClient = await db.client.findUnique({ where: { id } });
-    if (!existingClient) {
-      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-    }
-
-    const oldValues = formatAuditValues({
-      name: existingClient.name,
-      description: existingClient.description,
-      isActive: existingClient.isActive,
-    });
-
-    const updatedClient = await db.client.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description: description || null }),
-        ...(isActive !== undefined && { isActive }),
-      },
-    });
-
-    const newValues = formatAuditValues({
-      name: updatedClient.name,
-      description: updatedClient.description,
-      isActive: updatedClient.isActive,
-    });
-
-    await createAuditLog({
-      userId: session.id,
-      action: 'UPDATE_CLIENT',
-      entityType: 'CLIENT',
-      entityId: id,
-      oldValues,
-      newValues,
-    });
-
-    return NextResponse.json({ client: updatedClient });
-  } catch (error: any) {
-    console.error('Update client error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    if (!checkPermission(session.role, 'MANAGE_CLIENTS')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const { id } = await context.params;
+    const { id } = await params
 
     const client = await db.client.findUnique({
       where: { id },
       include: {
         _count: { select: { sites: true } },
       },
-    });
+    })
 
     if (!client) {
-      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    if (client._count.sites > 0) {
+    return NextResponse.json({ data: client })
+  } catch (error) {
+    console.error('GET /api/clients/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 })
+  }
+}
+
+// PUT /api/clients/[id] — update
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!checkPermission(session.role, 'MANAGE_CLIENTS')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id } = await params
+    const body = await req.json()
+    const { name, description, isActive } = body
+
+    const existing = await db.client.findUnique({ where: { id } })
+    if (!existing) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
+      return NextResponse.json({ error: 'Client name cannot be empty' }, { status: 400 })
+    }
+
+    const updateData: Record<string, unknown> = {}
+    if (name !== undefined) updateData.name = name.trim()
+    if (description !== undefined) updateData.description = description || null
+    if (isActive !== undefined) updateData.isActive = isActive
+
+    const client = await db.client.update({
+      where: { id },
+      data: updateData,
+      include: {
+        _count: { select: { sites: true } },
+      },
+    })
+
+    await createAuditLog({
+      userId: session.id,
+      action: 'UPDATE_CLIENT',
+      entityType: 'CLIENT',
+      entityId: id,
+      oldValues: JSON.stringify(existing),
+      newValues: JSON.stringify(client),
+    })
+
+    return NextResponse.json({ data: client })
+  } catch (error) {
+    console.error('PUT /api/clients/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to update client' }, { status: 500 })
+  }
+}
+
+// DELETE /api/clients/[id] — delete (cascades to sites)
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!checkPermission(session.role, 'MANAGE_CLIENTS')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id } = await params
+
+    const existing = await db.client.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { sites: true } },
+      },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    if (existing._count.sites > 0) {
       return NextResponse.json(
-        { error: 'Cannot delete client with existing sites. Delete all sites first.' },
+        { error: `Cannot delete client with ${existing._count.sites} site(s). Delete all sites first.` },
         { status: 400 }
-      );
+      )
     }
 
-    const oldValues = formatAuditValues({
-      id: client.id,
-      name: client.name,
-      description: client.description,
-    });
-
-    await db.client.delete({ where: { id } });
+    await db.client.delete({ where: { id } })
 
     await createAuditLog({
       userId: session.id,
       action: 'DELETE_CLIENT',
       entityType: 'CLIENT',
       entityId: id,
-      oldValues,
-    });
+      oldValues: JSON.stringify(existing),
+    })
 
-    return NextResponse.json({ message: 'Client deleted successfully' });
-  } catch (error: any) {
-    console.error('Delete client error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('DELETE /api/clients/[id] error:', error)
+    return NextResponse.json({ error: 'Failed to delete client' }, { status: 500 })
   }
 }
